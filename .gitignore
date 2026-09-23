@@ -1,0 +1,6 @@
+.Renviron
+.Rhistory
+.RData
+.Rproj.user/
+*.zip
+data/
