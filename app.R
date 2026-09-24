@@ -903,7 +903,12 @@ ui <- navbarPage(
         class = "page-intro",
         div(class = "eyebrow", "CAPTURA POR GRUPOS"),
         tags$h2("Registrar una observación"),
-        tags$p("Cada grupo registra observaciones únicamente para Recolección y transporte o Barrido. Los registros se sincronizan entre sesiones pocos segundos después de guardarse.")
+        tags$p("Cada grupo registra observaciones únicamente para Recolección y transporte o Barrido. Los registros se sincronizan entre sesiones pocos segundos después de guardarse."),
+        tags$div(
+          style = "margin-top:14px; padding:12px 14px; border-left:5px solid #00628C; background:#EAF6FA; color:#153744; font-family:Verdana, Geneva, sans-serif;",
+          tags$strong("Periodo de recepción de aportes: "),
+          "la captura estará disponible desde hoy, jueves 24 de septiembre, y se mantendrá abierta hasta finalizar los primeros 15 minutos de la sesión del viernes 25 de septiembre. Durante este periodo cada grupo podrá registrar y completar sus observaciones."
+        )
       ),
       fluidRow(
         column(
@@ -1267,9 +1272,21 @@ server <- function(input, output, session) {
             tags$details(
               class = "source-observation",
               tags$summary(
-                tags$span(class = "source-observation-number", paste0("Observación ", j)),
-                tags$span(class = "source-observation-by", paste0(" · ", src$persona, " · ", src$grupo)),
-                tags$span(class = "source-observation-categories", category_badges(src$categorias))
+                div(
+                  class = "source-observation-preview",
+                  div(
+                    class = "source-observation-preview-head",
+                    tags$span(class = "source-observation-number", paste0("Observación ", j)),
+                    tags$span(class = "source-observation-categories", category_badges(src$categorias))
+                  ),
+                  tags$p(class = "source-observation-preview-text", src$observacion),
+                  tags$p(
+                    class = "source-observation-preview-implication",
+                    tags$strong("Implicación: "),
+                    ifelse(nzchar(src$implicacion), src$implicacion, "Sin implicación registrada")
+                  ),
+                  tags$small(class = "source-observation-preview-group", paste0("Aporte: ", src$grupo))
+                )
               ),
               div(
                 class = "source-observation-body",
