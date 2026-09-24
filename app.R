@@ -804,7 +804,7 @@ crear_excel_resultados <- function(file, observaciones, groups, conclusiones, vo
   )
   writeData(wb, "Conclusiones", mc, withFilter = TRUE)
   if (ncol(mc) > 0) addStyle(wb, "Conclusiones", header_style, rows = 1, cols = 1:ncol(mc), gridExpand = TRUE)
-  setColWidths(wb, "Conclusiones", cols = 1:ncol(mc), widths = c(10,28,35,75,22,24,22))
+  setColWidths(wb, "Conclusiones", cols = 1:ncol(mc), widths = c(10,28,35,75,22,24))
 
   addWorksheet(wb, "Priorización")
   pr <- ranking %>% transmute(
@@ -1615,6 +1615,7 @@ server <- function(input, output, session) {
 
   output$download_excel <- downloadHandler(
     filename = function() paste0("Observaciones_taller_", format(Sys.Date(), "%Y-%m-%d"), ".xlsx"),
+    contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     content = function(file) {
       refresh_cache(TRUE)
       g <- build_group_summary(CACHE$observaciones)
