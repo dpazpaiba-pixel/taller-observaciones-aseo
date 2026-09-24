@@ -1,6 +1,7 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V6.7: solo Recolección y transporte + Comercialización
+# V7.2: sesión enfocada en Recolección y transporte + Barrido
+#       Comercialización queda oculta para esta sesión
 #       Sin preguntas del instrumento en ninguna actividad
 #       Límites: Observación 50 caracteres; demás textos libres 100
 #       Captura de observaciones por grupos
@@ -28,10 +29,10 @@ CATEGORIAS <- c(
 )
 
 ACTIVIDADES <- data.frame(
-  id = c(7L, 9L),
+  id = c(7L, 8L),
   actividad = c(
     "Recolección y transporte",
-    "Comercialización"
+    "Barrido"
   ),
   stringsAsFactors = FALSE
 )
@@ -45,26 +46,23 @@ BLOQUES_POR_ACTIVIDAD <- list(
     "Presentación residuos",
     "Zonas de difícil acceso"
   ),
-  `9` = c(
-    "Reporte de información al SUI",
-    "Facturación conjunta, distribución y liquidación",
-    "Actualización de catastro",
-    "Atención al usuario (PQRS)",
-    "Publicación y campañas",
-    "Indexación",
-    "Subsidios y contribuciones",
-    "Personal",
-    "Aplicación de la metodología"
+  `8` = c(
+    "Cuadrilla y personal",
+    "Herramientas y equipos",
+    "Dotación y EPP",
+    "Muestra observada (qué evidenciamos al observar la actividad)",
+    "Activos y personal compartidos",
+    "Transversal"
   )
 )
 
 COMISIONES <- c(
   "Ruta I-1 · Chipaque – Ubaque – Choachí",
   "D1–D3 · San Pelayo – Canalete – Moñitos",
-  "Ruta I-2 · Tequendama y Alto Magdalena",
-  "Chocó · Tutunendo – Lloró – Yuto – Samurindó",
+  "Ruta I-2 : Tena · Anolaima · Anapoima",
+  "Ruta III-1 Chocó: Tutunendo · Lloró · Yuto · Samurindó",
   "Ruta I-3 · Guayatá – Macanal – Santa María",
-  "Durania – Santiago – San Cayetano",
+  "Ruta Norte de Santander: Durania · Santiago · San Cayetano",
   "Ruta I-4 · Charalá – Encino – Oiba",
   "Ruta IV-1 · Alejandría – Concepción – El Peñol",
   "Ruta II-1 · Turbaná – San Estanislao – Santa Catalina",
@@ -79,10 +77,10 @@ COMISIONES <- c(
 GRUPOS_MUNICIPIOS <- list(
   "Ruta I-1 · Chipaque – Ubaque – Choachí" = c("Chipaque", "Ubaque", "Choachí"),
   "D1–D3 · San Pelayo – Canalete – Moñitos" = c("San Pelayo", "Canalete", "Moñitos"),
-  "Ruta I-2 · Tequendama y Alto Magdalena" = character(0),
-  "Chocó · Tutunendo – Lloró – Yuto – Samurindó" = c("Tutunendo", "Lloró", "Yuto", "Samurindó"),
+  "Ruta I-2 : Tena · Anolaima · Anapoima" = c("Tena", "Anolaima", "Anapoima"),
+  "Ruta III-1 Chocó: Tutunendo · Lloró · Yuto · Samurindó" = c("Tutunendo", "Lloró", "Yuto", "Samurindó"),
   "Ruta I-3 · Guayatá – Macanal – Santa María" = c("Guayatá", "Macanal", "Santa María"),
-  "Durania – Santiago – San Cayetano" = c("Durania", "Santiago", "San Cayetano"),
+  "Ruta Norte de Santander: Durania · Santiago · San Cayetano" = c("Durania", "Santiago", "San Cayetano"),
   "Ruta I-4 · Charalá – Encino – Oiba" = c("Charalá", "Encino", "Oiba"),
   "Ruta IV-1 · Alejandría – Concepción – El Peñol" = c("Alejandría", "Concepción", "El Peñol"),
   "Ruta II-1 · Turbaná – San Estanislao – Santa Catalina" = c("Turbaná", "San Estanislao", "Santa Catalina"),
@@ -398,7 +396,7 @@ read_postgres_observaciones <- function() {
            municipios, implicacion, creado_en
     FROM public.observaciones
     WHERE activa = true
-      AND actividad_id IN (7, 9)
+      AND actividad_id IN (7, 8)
     ORDER BY creado_en, id
   ")
   if (nrow(x) == 0) return(empty_observaciones())
@@ -437,7 +435,7 @@ read_postgres_conclusiones <- function() {
            habilitada_priorizacion, actualizado_por, actualizado_en
     FROM public.conclusiones
     WHERE activa = true
-      AND actividad_id IN (7, 9)
+      AND actividad_id IN (7, 8)
     ORDER BY actividad_id, bloque, id
   ")
   if (nrow(x) == 0) return(empty_conclusiones())
@@ -905,7 +903,7 @@ ui <- navbarPage(
         class = "page-intro",
         div(class = "eyebrow", "CAPTURA POR GRUPOS"),
         tags$h2("Registrar una observación"),
-        tags$p("Cada grupo registra observaciones únicamente para Recolección y transporte o Comercialización. Los registros se sincronizan entre sesiones pocos segundos después de guardarse.")
+        tags$p("Cada grupo registra observaciones únicamente para Recolección y transporte o Barrido. Los registros se sincronizan entre sesiones pocos segundos después de guardarse.")
       ),
       fluidRow(
         column(
