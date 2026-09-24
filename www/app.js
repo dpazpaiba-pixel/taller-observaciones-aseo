@@ -9,8 +9,6 @@
     persona_registro: 100,
     observacion: 50,
     implicacion: 100,
-    facilitator_name: 100,
-    modal_consolidator: 100,
     modal_conclusion: 100,
     participant_name: 100
   };
@@ -42,7 +40,7 @@
   function applyRememberedName() {
     var saved = window.localStorage ? localStorage.getItem(NAME_KEY) : '';
     if (!saved) return;
-    ['persona_registro', 'participant_name', 'facilitator_name'].forEach(function (id) {
+    ['persona_registro', 'participant_name'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el && !el.value) {
         el.value = saved;
@@ -123,7 +121,7 @@
   });
 
   document.addEventListener('change', function (event) {
-    if ((event.target.id === 'persona_registro' || event.target.id === 'participant_name' || event.target.id === 'facilitator_name') && window.localStorage) {
+    if ((event.target.id === 'persona_registro' || event.target.id === 'participant_name') && window.localStorage) {
       var value = (event.target.value || '').trim();
       if (value) localStorage.setItem(NAME_KEY, value);
     }

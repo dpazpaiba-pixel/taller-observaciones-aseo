@@ -905,3 +905,282 @@ th { white-space: nowrap; }
 @media (max-width: 767px) {
   .consolidation-refresh-wrap { padding-top: 0; margin-bottom: 10px; }
 }
+
+/* ===== V7.4 · Apariencia institucional cuadrada =====
+   Cambio exclusivamente visual. No modifica estructura ni lógica. */
+:root {
+  --brand: #00628C;
+  --brand-dark: #004B6B;
+  --brand-light: #44B2D7;
+  --brand-green: #44A796;
+  --brand-soft: #EAF6FA;
+  --ink: #153744;
+  --muted: #5F7077;
+  --line: #C9D9DE;
+  --surface: #FFFFFF;
+  --surface-soft: #F3F8F9;
+}
+
+html,
+body,
+button,
+input,
+select,
+textarea,
+.form-control,
+.selectize-input,
+.btn,
+table,
+.navbar {
+  font-family: Verdana, Geneva, sans-serif !important;
+}
+
+html, body {
+  background: #F2F7F8;
+  color: var(--ink);
+}
+
+/* Barra superior: limpia, recta e institucional */
+.navbar,
+.navbar-default {
+  background: #FFFFFF;
+  border: 0;
+  border-bottom: 4px solid var(--brand);
+  border-radius: 0 !important;
+  box-shadow: 0 2px 7px rgba(0, 98, 140, 0.10);
+}
+
+.navbar-default .navbar-brand,
+.navbar-default .navbar-nav > li > a {
+  color: #143946;
+  font-weight: 700;
+}
+
+.navbar-default .navbar-nav > li > a:hover,
+.navbar-default .navbar-nav > li > a:focus {
+  color: var(--brand);
+  background: #F0F8FA;
+}
+
+.navbar-default .navbar-nav > .active > a,
+.navbar-default .navbar-nav > .active > a:focus,
+.navbar-default .navbar-nav > .active > a:hover {
+  color: #FFFFFF;
+  background: var(--brand);
+}
+
+/* Tarjetas más cuadradas */
+.panel-card,
+.question-card,
+.finding-card,
+.metric-card,
+.analysis-box,
+.auto-summary,
+.source-details,
+.source-observation,
+.source-meta-box,
+.source-full-field,
+.conclusion-item,
+.points-box,
+.info-strip,
+.empty-state,
+.person-chip {
+  border-radius: 3px !important;
+  border-color: var(--line);
+}
+
+.panel-card,
+.question-card,
+.finding-card,
+.metric-card {
+  box-shadow: 0 3px 10px rgba(0, 70, 96, 0.07);
+}
+
+.question-card,
+.consolidation-card {
+  border-left-color: var(--brand);
+}
+
+/* Campos rectos y nítidos */
+.form-control,
+.selectize-input,
+.conclusion-editor textarea.form-control {
+  border-radius: 3px !important;
+  border: 1px solid #AFC6CD;
+  background: #FFFFFF;
+}
+
+.form-control:focus,
+.selectize-input.focus {
+  border-color: var(--brand-light);
+  box-shadow: 0 0 0 2px rgba(68, 178, 215, 0.20);
+}
+
+/* Botones */
+.btn,
+.category-btn,
+.vote-btn {
+  border-radius: 3px !important;
+}
+
+.btn-primary {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active {
+  background: var(--brand-dark) !important;
+  border-color: var(--brand-dark) !important;
+}
+
+/* Acciones positivas / descargas */
+.btn-success,
+a.btn-success,
+button.btn-success {
+  background: var(--brand-green) !important;
+  border-color: var(--brand-green) !important;
+  color: #FFFFFF !important;
+}
+
+.btn-success:hover,
+.btn-success:focus,
+.btn-success:active {
+  background: #358B7D !important;
+  border-color: #358B7D !important;
+}
+
+/* Encabezados y acentos */
+.eyebrow,
+.question-mini,
+.source-observation-number {
+  color: var(--brand);
+}
+
+.page-intro h2,
+.results-header h2,
+.question-card h2,
+.section-heading h3,
+.activity-vote-section > h3,
+.consolidation-title-row h3 {
+  color: #113E50;
+}
+
+/* KPI: borde superior con el azul claro */
+.metric-card {
+  border-top: 4px solid var(--brand-light);
+}
+
+.metric-value {
+  color: var(--brand);
+}
+
+/* Cajas informativas */
+.info-strip,
+.question-preview,
+.auto-summary,
+.source-main-text {
+  border-left-color: var(--brand-light) !important;
+}
+
+.info-strip,
+.question-preview {
+  background: #F2FAFC;
+}
+
+/* Elementos pequeños menos redondeados */
+.mini-kpis span,
+.category-badge,
+.question-code,
+.question-level,
+.question-mini,
+.status-pill {
+  border-radius: 3px !important;
+}
+
+.question-code {
+  background: var(--brand);
+}
+
+.person-avatar {
+  border-radius: 3px !important;
+  background: #DDF3F7;
+  color: var(--brand-dark);
+}
+
+/* Priorización */
+.vote-btn {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.vote-btn:hover {
+  background: #EAF7FB;
+}
+
+.points-box.complete {
+  background: #EAF7F4;
+  border-color: var(--brand-green);
+}
+
+/* Tablas */
+table {
+  background: #FFFFFF;
+}
+
+table > thead > tr > th,
+.table > thead > tr > th {
+  background: var(--brand);
+  color: #FFFFFF;
+  border-color: var(--brand-dark) !important;
+}
+
+.table-striped > tbody > tr:nth-of-type(odd) {
+  background-color: #F5FAFB;
+}
+
+/* Detalles desplegables */
+.source-details summary,
+.source-observation summary {
+  background: #F1F7F9;
+}
+
+.source-details summary:hover,
+.source-observation summary:hover {
+  background: #E5F3F7;
+}
+
+/* Navegación secundaria */
+.nav-tabs {
+  border-bottom-color: var(--brand);
+}
+
+.nav-tabs > li > a {
+  border-radius: 3px 3px 0 0 !important;
+  color: var(--brand-dark);
+}
+
+.nav-tabs > li.active > a,
+.nav-tabs > li.active > a:hover,
+.nav-tabs > li.active > a:focus {
+  color: #FFFFFF;
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+/* Pie */
+.app-footer {
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+
+/* Conserva buena lectura en celular */
+@media (max-width: 767px) {
+  .panel-card,
+  .question-card,
+  .finding-card,
+  .metric-card {
+    border-radius: 2px !important;
+  }
+}
