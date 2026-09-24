@@ -62,9 +62,9 @@ COMISIONES <- c(
   "Ruta I-1 · Chipaque – Ubaque – Choachí",
   "D1–D3 · San Pelayo – Canalete – Moñitos",
   "Ruta I-2 · Tequendama y Alto Magdalena",
-  "Ruta III-1 · Atrato – Lloró – Unión Panamericana",
+  "Chocó · Tutunendo – Lloró – Yuto – Samurindó",
   "Ruta I-3 · Guayatá – Macanal – Santa María",
-  "D1–D3 · Sotará (Paispamba) – Cajibío – Padilla",
+  "Durania – Santiago – San Cayetano",
   "Ruta I-4 · Charalá – Encino – Oiba",
   "Ruta IV-1 · Alejandría – Concepción – El Peñol",
   "Ruta II-1 · Turbaná – San Estanislao – Santa Catalina",
@@ -80,9 +80,9 @@ GRUPOS_MUNICIPIOS <- list(
   "Ruta I-1 · Chipaque – Ubaque – Choachí" = c("Chipaque", "Ubaque", "Choachí"),
   "D1–D3 · San Pelayo – Canalete – Moñitos" = c("San Pelayo", "Canalete", "Moñitos"),
   "Ruta I-2 · Tequendama y Alto Magdalena" = character(0),
-  "Ruta III-1 · Atrato – Lloró – Unión Panamericana" = c("Atrato", "Lloró", "Unión Panamericana"),
+  "Chocó · Tutunendo – Lloró – Yuto – Samurindó" = c("Tutunendo", "Lloró", "Yuto", "Samurindó"),
   "Ruta I-3 · Guayatá – Macanal – Santa María" = c("Guayatá", "Macanal", "Santa María"),
-  "D1–D3 · Sotará (Paispamba) – Cajibío – Padilla" = c("Sotará (Paispamba)", "Cajibío", "Padilla"),
+  "Durania – Santiago – San Cayetano" = c("Durania", "Santiago", "San Cayetano"),
   "Ruta I-4 · Charalá – Encino – Oiba" = c("Charalá", "Encino", "Oiba"),
   "Ruta IV-1 · Alejandría – Concepción – El Peñol" = c("Alejandría", "Concepción", "El Peñol"),
   "Ruta II-1 · Turbaná – San Estanislao – Santa Catalina" = c("Turbaná", "San Estanislao", "Santa Catalina"),
@@ -802,7 +802,6 @@ crear_excel_resultados <- function(file, observaciones, groups, conclusiones, vo
     `Bloque temático` = bloque,
     Conclusión = conclusion,
     `Habilitada para priorización` = ifelse(habilitada_votacion, "Sí", "No"),
-    `Actualizado por` = actualizado_por,
     `Última actualización` = updated_at
   )
   writeData(wb, "Conclusiones", mc, withFilter = TRUE)
@@ -930,6 +929,11 @@ ui <- navbarPage(
               choices = setNames(BLOQUES_POR_ACTIVIDAD[["7"]], BLOQUES_POR_ACTIVIDAD[["7"]]),
               selected = BLOQUES_POR_ACTIVIDAD[["7"]][1]
             ),
+            selectizeInput(
+              "municipios", "Municipios donde se observó",
+              choices = NULL, multiple = TRUE,
+              options = list(create = TRUE, persist = FALSE, plugins = list("remove_button"), placeholder = "Escriba un municipio y presione Enter")
+            ),
             textAreaInput("observacion", "Observación de campo", rows = 4, placeholder = "Describa concretamente qué se observó."),
             div(class = "field-help", paste0("Máximo ", MAX_OBSERVACION, " caracteres.")),
             tags$label(class = "control-label", "¿Cómo clasifica esta observación?"),
@@ -946,11 +950,6 @@ ui <- navbarPage(
               })
             ),
             div(class = "field-help", "Seleccione una sola clasificación."),
-            selectizeInput(
-              "municipios", "Municipios donde se observó",
-              choices = NULL, multiple = TRUE,
-              options = list(create = TRUE, persist = FALSE, plugins = list("remove_button"), placeholder = "Escriba un municipio y presione Enter")
-            ),
             textAreaInput("implicacion", "Implicación para el estudio", rows = 3, placeholder = "¿Qué debería revisar o analizar el estudio regulatorio?"),
             div(class = "field-help", paste0("Máximo ", MAX_TEXTO, " caracteres.")),
             actionButton("guardar_observacion", "Guardar observación", class = "btn-primary btn-lg full-action")
@@ -998,7 +997,7 @@ ui <- navbarPage(
         class = "page-intro",
         div(class = "eyebrow", "PRIORIZACIÓN"),
         tags$h2("Priorizar conclusiones"),
-        tags$p("Cada participante distribuye sus puntos entre las conclusiones habilitadas para priorización.")
+        tags$p("Cada participante distribuye sus puntos entre las conclusiones registradas para priorización.")
       ),
       uiOutput("prioritization_ui")
     )
@@ -1207,10 +1206,9 @@ server <- function(input, output, session) {
   output$consolidation_ui <- renderUI({
     tagList(
       fluidRow(
-        column(3, tagList(textInput("facilitator_name", "Persona que consolida", placeholder = "Nombre y apellido"), div(class = "field-help", paste0("Máximo ", MAX_TEXTO, " caracteres.")))),
-        column(3, selectInput("consolidation_activity", "Actividad", choices = c("Todas" = "", setNames(ACTIVIDADES$id, ACTIVIDADES$actividad)))),
-        column(3, uiOutput("consolidation_block_filter")),
-        column(3, div(class = "consolidation-refresh-wrap", actionButton("refresh_consolidation", "Actualizar consolidado", icon = icon("refresh"), class = "btn-primary full-action")))
+        column(4, selectInput("consolidation_activity", "Actividad", choices = c("Todas" = "", setNames(ACTIVIDADES$id, ACTIVIDADES$actividad)))),
+        column(4, uiOutput("consolidation_block_filter")),
+        column(4, div(class = "consolidation-refresh-wrap", actionButton("refresh_consolidation", "Actualizar consolidado", icon = icon("refresh"), class = "btn-primary full-action")))
       ),
       div(class = "field-help consolidation-refresh-help", "Mientras permanezca en esta pantalla, las tarjetas no se recargan solas. Esto mantiene abiertas las observaciones y evita interrumpir la edición."),
       uiOutput("consolidation_metrics"),
@@ -1231,7 +1229,7 @@ server <- function(input, output, session) {
       class = "metrics-grid four",
       metric_card("Bloques con aportes", nrow(g)),
       metric_card("Conclusiones", nrow(c)),
-      metric_card("Habilitadas para priorizar", sum(c$habilitada_votacion)),
+      metric_card("Conclusiones", nrow(c)),
       metric_card("Observaciones capturadas", nrow(consolidation_obs()))
     )
   })
@@ -1308,11 +1306,10 @@ server <- function(input, output, session) {
                 class = "conclusion-item",
                 div(
                   class = "conclusion-item-top",
-                  tags$strong(paste0("Conclusión ", k)),
-                  tags$span(class = paste("status-pill", if (isTRUE(cr$habilitada_votacion)) "enabled" else "disabled"), if (isTRUE(cr$habilitada_votacion)) "Habilitada para priorización" else "No habilitada")
+                  tags$strong(paste0("Conclusión ", k))
                 ),
                 tags$p(cr$conclusion),
-                div(class = "save-meta", paste(ifelse(nzchar(cr$actualizado_por), cr$actualizado_por, "Sin responsable"), "·", format_fecha(cr$updated_at))),
+                div(class = "save-meta", format_fecha(cr$updated_at)),
                 tags$button(type = "button", class = "btn btn-default conclusion-action-btn", `data-mode` = "edit", `data-id` = cr$id, `data-key` = row$group_key, "Editar conclusión")
               )
             }))
@@ -1339,10 +1336,8 @@ server <- function(input, output, session) {
       if (nrow(c0) == 0) return()
       c0 <- c0[1, ]
       value <- c0$conclusion
-      enabled <- isTRUE(c0$habilitada_votacion)
     } else {
       value <- ""
-      enabled <- FALSE
       cid <- ""
     }
 
@@ -1350,11 +1345,8 @@ server <- function(input, output, session) {
 
     showModal(modalDialog(
       title = if (mode == "edit") "Editar conclusión" else "Agregar conclusión",
-      textInput("modal_consolidator", "Persona que consolida", value = input$facilitator_name %||% "", placeholder = "Nombre y apellido"),
-      div(class = "field-help", paste0("Máximo ", MAX_TEXTO, " caracteres.")),
       textAreaInput("modal_conclusion", "Conclusión", value = value, rows = 6, width = "100%", placeholder = "Redacte una conclusión clara y concreta para este bloque."),
       div(class = "field-help", paste0("Máximo ", MAX_TEXTO, " caracteres.")),
-      checkboxInput("modal_enabled", "Habilitar esta conclusión para la priorización", value = enabled),
       easyClose = FALSE,
       footer = tagList(modalButton("Cancelar"), actionButton("save_conclusion_modal", "Guardar conclusión", class = "btn-primary"))
     ))
@@ -1363,23 +1355,15 @@ server <- function(input, output, session) {
   observeEvent(input$save_conclusion_modal, {
     ctx <- conclusion_modal_context(); req(ctx)
     text <- trimws(input$modal_conclusion %||% "")
-    person <- trimws(input$modal_consolidator %||% "")
-    enabled <- isTRUE(input$modal_enabled)
+    person <- "Consolidación"
+    enabled <- TRUE
 
     if (!nzchar(text)) {
       showNotification("Escriba la conclusión.", type = "error")
       return()
     }
-    if (!nzchar(person)) {
-      showNotification("Ingrese el nombre de la persona que consolida.", type = "error")
-      return()
-    }
     if (nchar(text, type = "chars") > MAX_TEXTO) {
       showNotification(paste0("La conclusión puede tener máximo ", MAX_TEXTO, " caracteres."), type = "error")
-      return()
-    }
-    if (nchar(person, type = "chars") > MAX_TEXTO) {
-      showNotification(paste0("El nombre de quien consolida puede tener máximo ", MAX_TEXTO, " caracteres."), type = "error")
       return()
     }
 
@@ -1399,7 +1383,6 @@ server <- function(input, output, session) {
     tryCatch({
       save_conclusion(row, ctx$mode)
       refresh_consolidation_snapshot(TRUE)
-      updateTextInput(session, "facilitator_name", value = person)
       removeModal()
       conclusion_modal_context(NULL)
       showNotification("Conclusión guardada.", type = "message", duration = 4)
@@ -1413,7 +1396,7 @@ server <- function(input, output, session) {
   vote_state <- reactiveVal(setNames(integer(0), character(0)))
 
   votable_conclusions <- reactive({
-    conclusiones_live() %>% filter(habilitada_votacion, nzchar(conclusion)) %>% arrange(actividad_id, bloque, id)
+    conclusiones_live() %>% filter(nzchar(conclusion)) %>% arrange(actividad_id, bloque, id)
   })
 
   observeEvent(votable_conclusions()$id, {
@@ -1443,7 +1426,7 @@ server <- function(input, output, session) {
         class = "question-card",
         div(class = "eyebrow", "PRIORIZACIÓN COLECTIVA"),
         tags$h2("¿Cuáles de estas conclusiones deberían ser analizadas necesariamente en el estudio regulatorio?"),
-        tags$p("Distribuya exactamente ", tags$strong(PUNTOS_POR_PERSONA), " puntos entre las conclusiones habilitadas.")
+        tags$p("Distribuya exactamente ", tags$strong(PUNTOS_POR_PERSONA), " puntos entre las conclusiones.")
       ),
       div(class = "voter-toolbar panel-card", fluidRow(
         column(7, tagList(textInput("participant_name", "Nombre del participante", placeholder = "Nombre y apellido"), div(class = "field-help", paste0("Máximo ", MAX_TEXTO, " caracteres.")))),
