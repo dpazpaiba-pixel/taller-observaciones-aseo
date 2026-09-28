@@ -80,6 +80,15 @@
     return Array.from(document.querySelectorAll('.activity-vote-section[data-activity-id]'));
   }
 
+  function applyActivityFilter() {
+    var filter = document.getElementById('priority_activity_filter_client');
+    var selected = filter ? String(filter.value || '') : '';
+    votingSections().forEach(function (section) {
+      var aid = String(section.dataset.activityId || '');
+      section.style.display = (!selected || selected === aid) ? '' : 'none';
+    });
+  }
+
   function ensureVotingStateFromDOM() {
     document.querySelectorAll('[data-vote-local="true"]').forEach(function (btn) {
       var id = String(btn.dataset.id || '');
@@ -154,7 +163,7 @@
     var submit = document.getElementById('submit_votes_client');
     if (submit) {
       submit.disabled = localVoteBusy || !allComplete || !hasAllActivities || !nameOk;
-      if (!localVoteBusy) submit.textContent = 'Enviar priorización (5 + 5 puntos)';
+      if (!localVoteBusy) submit.textContent = 'Enviar priorización';
     }
 
     var status = document.getElementById('voting_client_status');
@@ -191,6 +200,13 @@
       }, { priority: 'event' });
     }
   }
+
+  document.addEventListener('change', function (event) {
+    if (event.target && event.target.id === 'priority_activity_filter_client') {
+      applyActivityFilter();
+      return;
+    }
+  });
 
   document.addEventListener('click', function (event) {
     var categoryButton = event.target.closest('.category-btn');
@@ -317,6 +333,7 @@
       applyRememberedName();
       applyRememberedGroup();
       applyStaticLimits();
+      applyActivityFilter();
       updateVotingUI();
     }, 250);
 
@@ -331,6 +348,7 @@
           voteActivityByConclusion = {};
           localVoteBusy = false;
           applyRememberedName();
+          applyActivityFilter();
           updateVotingUI();
         }, 0);
       }
@@ -342,6 +360,7 @@
       node.setAttribute('aria-pressed', 'false');
     });
     applyStaticLimits();
+    applyActivityFilter();
   });
 
   // Shiny dispara shiny:connected como evento jQuery en algunos clientes y
