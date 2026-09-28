@@ -1301,3 +1301,15 @@ table > thead > tr > th,
     width: 100%;
   }
 }
+
+/* V8.7 · Aviso de cierre de captura para RYT y Barrido */
+.capture-closed-notice {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 4px solid #00628C;
+  background: #eef7fa;
+  color: #173847;
+  font-family: Verdana, Geneva, sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
