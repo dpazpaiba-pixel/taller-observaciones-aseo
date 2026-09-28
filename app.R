@@ -1,6 +1,6 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V7.9: priorización liviana + handshake robusto cliente/servidor (5 puntos por actividad)
+# V8.0: priorización estable server-rendered una sola vez + controles locales JS (5 puntos por actividad)
 #       Comercialización queda oculta para esta sesión
 #       Sin preguntas del instrumento en ninguna actividad
 #       Límites: Observación 50 caracteres; demás textos libres 100
@@ -1088,8 +1088,20 @@ ui <- navbarPage(
         ),
         div(class = "field-help", paste0("Máximo ", MAX_TEXTO, " caracteres."))
       ),
-      div(id = "voting_client_status", class = "voting-client-status", "Cargando conclusiones para priorización…"),
-      div(id = "voting_client_root", class = "voting-client-root"),
+      div(
+        id = "voting_client_status",
+        class = "voting-client-status",
+        paste0(
+          "Asigne exactamente ", PUNTOS_POR_ACTIVIDAD,
+          " puntos en Recolección y transporte y ",
+          PUNTOS_POR_ACTIVIDAD, " puntos en Barrido."
+        )
+      ),
+      div(
+        id = "voting_client_root",
+        class = "voting-client-root",
+        uiOutput("prioritization_cards_ui")
+      ),
       div(
         class = "submit-vote-wrap",
         tags$button(
@@ -1522,51 +1534,89 @@ server <- function(input, output, session) {
 
   session_votable <- reactiveVal(empty_conclusiones())
 
-  send_voting_data <- function() {
+  output$prioritization_cards_ui <- renderUI({
+    # Una sola construcción por sesión. La lectura usa caché compartida por worker.
     c <- get_prioritization_conclusions(FALSE) %>%
       filter(habilitada_votacion, nzchar(conclusion)) %>%
       arrange(actividad_id, bloque, id)
 
     session_votable(c)
 
-    activities_payload <- lapply(seq_len(nrow(ACTIVIDADES)), function(i) {
-      aid <- as.integer(ACTIVIDADES$id[i])
-      ca <- c %>% filter(actividad_id == aid)
-      list(
-        id = as.character(aid),
-        name = as.character(ACTIVIDADES$actividad[i]),
-        conclusions = lapply(seq_len(nrow(ca)), function(j) {
-          list(
-            id = as.character(ca$id[j]),
-            block = as.character(ca$bloque[j]),
-            conclusion = as.character(ca$conclusion[j])
-          )
-        })
-      )
-    })
+    if (nrow(c) == 0) {
+      return(div(class = "empty-state",
+                 "Todavía no hay conclusiones habilitadas para priorización."))
+    }
 
-    session$sendCustomMessage("votingData", list(
-      pointsPerActivity = as.integer(PUNTOS_POR_ACTIVIDAD),
-      totalPoints = as.integer(PUNTOS_TOTALES_POR_PERSONA),
-      activities = activities_payload
-    ))
-  }
+    tagList(lapply(seq_len(nrow(ACTIVIDADES)), function(i) {
+      aid <- as.integer(ACTIVIDADES$id[i])
+      actividad_nombre <- as.character(ACTIVIDADES$actividad[i])
+      ca <- c %>% filter(actividad_id == aid)
+
+      div(
+        class = "activity-vote-section",
+        `data-activity-id` = as.character(aid),
+        `data-activity-name` = actividad_nombre,
+        `data-points-limit` = as.character(PUNTOS_POR_ACTIVIDAD),
+        `data-has-conclusions` = if (nrow(ca) > 0) "true" else "false",
+
+        div(
+          class = "voting-activity-header",
+          tags$h3(actividad_nombre),
+          div(
+            class = "points-box activity-points-counter",
+            `data-activity-counter` = as.character(aid),
+            div(class = "points-big", as.character(PUNTOS_POR_ACTIVIDAD)),
+            div(class = "points-label", "puntos restantes"),
+            div(class = "points-small",
+                paste0("0 de ", PUNTOS_POR_ACTIVIDAD, " asignados"))
+          )
+        ),
+
+        if (nrow(ca) == 0) {
+          div(class = "empty-state", "No hay conclusiones disponibles en esta actividad.")
+        } else {
+          tagList(lapply(seq_len(nrow(ca)), function(j) {
+            conclusion_id <- as.character(ca$id[j])
+            div(
+              class = "finding-card vote-card",
+              div(class = "finding-topline",
+                  div(class = "finding-meta", as.character(ca$bloque[j]))),
+              div(class = "finding-text", as.character(ca$conclusion[j])),
+              div(
+                class = "vote-control",
+                tags$button(
+                  type = "button", class = "vote-btn vote-minus",
+                  `data-vote-local` = "true",
+                  `data-id` = conclusion_id,
+                  `data-delta` = "-1",
+                  `data-activity-id` = as.character(aid),
+                  `aria-label` = "Quitar un punto",
+                  disabled = "disabled", "−"
+                ),
+                div(class = "vote-number",
+                    `data-vote-number` = conclusion_id,
+                    `aria-live` = "polite", "0"),
+                tags$button(
+                  type = "button", class = "vote-btn vote-plus",
+                  `data-vote-local` = "true",
+                  `data-id` = conclusion_id,
+                  `data-delta` = "1",
+                  `data-activity-id` = as.character(aid),
+                  `aria-label` = "Agregar un punto", "+"
+                )
+              )
+            )
+          }))
+        }
+      )
+    }))
+  })
+
+  outputOptions(output, "prioritization_cards_ui", suspendWhenHidden = TRUE)
 
   observeEvent(input$main_tabs, {
-    if (identical(input$main_tabs, "priorizacion")) {
-      send_voting_data()
-    }
     if (identical(input$main_tabs, "resultados")) {
-      # Resultados toma una lectura fresca al entrar; normalmente solo la usan moderadores.
       refresh_cache(TRUE)
-    }
-  }, ignoreInit = TRUE)
-
-  # Handshake navegador-servidor: si el JavaScript termina de cargarse después
-  # de que Shiny abrió la pestaña, el cliente avisa que ya puede recibir datos.
-  observeEvent(input$voting_client_ready, {
-    if (identical(input$main_tabs, "priorizacion")) {
-      send_voting_data()
     }
   }, ignoreInit = TRUE)
 
