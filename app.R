@@ -1,6 +1,6 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V8.5: priorización independiente por actividad; cada actividad se envía con sus propios 5 puntos
+# V8.6: agrega Tratamiento; priorización independiente por actividad con 5 puntos por actividad
 #       5 puntos independientes por cada actividad incluida en la priorización
 #       Sin preguntas del instrumento en ninguna actividad
 #       Límites: Observación 50 caracteres; demás textos libres 100
@@ -29,7 +29,7 @@ CATEGORIAS <- c(
 )
 
 ACTIVIDADES <- data.frame(
-  id = c(7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L),
+  id = c(7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L, 15L),
   actividad = c(
     "Recolección y transporte",
     "Barrido",
@@ -38,7 +38,8 @@ ACTIVIDADES <- data.frame(
     "Poda",
     "Lavado",
     "Mantenimiento e instalación de cestas",
-    "Limpieza de playas"
+    "Limpieza de playas",
+    "Tratamiento"
   ),
   stringsAsFactors = FALSE
 )
@@ -88,7 +89,16 @@ BLOQUES_POR_ACTIVIDAD <- list(
   `11` = BLOQUES_OPERATIVOS_NUEVOS,
   `12` = BLOQUES_OPERATIVOS_NUEVOS,
   `13` = BLOQUES_OPERATIVOS_NUEVOS,
-  `14` = BLOQUES_OPERATIVOS_NUEVOS
+  `14` = BLOQUES_OPERATIVOS_NUEVOS,
+  # Tratamiento: bloques propios definidos para esta actividad.
+  `15` = c(
+    "Operación y condiciones de prestación",
+    "Tecnología, infraestructura y activos",
+    "Flujo y balance de materiales; pesaje y trazabilidad",
+    "Costos e ingresos; personal; uso compartido de recursos",
+    "Gestión ambiental y operativa; controles de calidad y laboratorio",
+    "Producto final y comercialización"
+  )
 )
 
 COMISIONES <- c(
@@ -442,7 +452,7 @@ read_postgres_observaciones <- function() {
            municipios, implicacion, creado_en
     FROM public.observaciones
     WHERE activa = true
-      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14)
+      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14, 15)
     ORDER BY creado_en, id
   ")
   if (nrow(x) == 0) return(empty_observaciones())
@@ -481,7 +491,7 @@ read_postgres_conclusiones <- function() {
            habilitada_priorizacion, actualizado_por, actualizado_en
     FROM public.conclusiones
     WHERE activa = true
-      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14)
+      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14, 15)
     ORDER BY actividad_id, bloque, id
   ")
   if (nrow(x) == 0) return(empty_conclusiones())
