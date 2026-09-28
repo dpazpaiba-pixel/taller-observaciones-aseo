@@ -1,6 +1,6 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V7.2: sesión enfocada en Recolección y transporte + Barrido
+# V7.8: priorización liviana para alta concurrencia (5 puntos por actividad)
 #       Comercialización queda oculta para esta sesión
 #       Sin preguntas del instrumento en ninguna actividad
 #       Límites: Observación 50 caracteres; demás textos libres 100
@@ -14,7 +14,7 @@
 
 ZONA_HORARIA <- "America/Bogota"
 N_PARTICIPANTES_ESPERADOS <- 50L
-PUNTOS_POR_PERSONA <- 5L
+PUNTOS_POR_ACTIVIDAD <- 5L
 N_PRIORIZADOS_DEFAULT <- 10L
 CACHE_SEGUNDOS <- 3
 MAX_OBSERVACION <- 50L
@@ -36,6 +36,8 @@ ACTIVIDADES <- data.frame(
   ),
   stringsAsFactors = FALSE
 )
+
+PUNTOS_TOTALES_POR_PERSONA <- PUNTOS_POR_ACTIVIDAD * nrow(ACTIVIDADES)
 
 BLOQUES_POR_ACTIVIDAD <- list(
   `7` = c(
@@ -542,23 +544,59 @@ insert_postgres_votos <- function(rows) {
   DBI::dbWithTransaction(con, {
     participante <- rows$participante[1]
     pkey <- rows$participante_key[1]
-    total <- sum(as.integer(rows$puntos))
 
+    # Serializa únicamente reenvíos del mismo participante; participantes distintos no se bloquean entre sí.
     DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(hashtext($1)) AS locked", params = list(pkey))
 
-    esperado <- DBI::dbGetQuery(con, "SELECT puntos_por_persona FROM public.configuracion_taller WHERE id = 1")$puntos_por_persona[1]
-    if (length(esperado) == 0 || is.na(esperado)) stop("No se encontró la configuración del taller.")
-    if (total != as.integer(esperado)) stop("La votación debe sumar exactamente ", esperado, " puntos.")
+    detalles <- rows %>%
+      transmute(
+        conclusion_id = as.integer(conclusion_id),
+        puntos = as.integer(puntos)
+      ) %>%
+      filter(!is.na(conclusion_id), !is.na(puntos), puntos > 0) %>%
+      group_by(conclusion_id) %>%
+      summarise(puntos = sum(puntos), .groups = "drop")
 
-    for (cid in unique(rows$conclusion_id)) {
-      ok <- DBI::dbGetQuery(
-        con,
-        "SELECT habilitada_priorizacion FROM public.conclusiones WHERE id = $1 AND activa = true",
-        params = list(as.integer(cid))
+    if (nrow(detalles) == 0) stop("La priorización no contiene puntos.")
+
+    ids <- unique(detalles$conclusion_id)
+    id_sql <- paste(ids, collapse = ",")
+    validas <- DBI::dbGetQuery(
+      con,
+      paste0(
+        "SELECT id, actividad_id FROM public.conclusiones ",
+        "WHERE activa = true AND habilitada_priorizacion = true AND id IN (", id_sql, ")"
       )
-      if (nrow(ok) == 0 || !isTRUE(ok$habilitada_priorizacion[1])) {
-        stop("Una de las conclusiones ya no está habilitada para priorización.")
-      }
+    )
+
+    if (nrow(validas) != length(ids)) {
+      stop("Una de las conclusiones ya no está habilitada para priorización.")
+    }
+
+    detalles <- detalles %>%
+      left_join(validas, by = c("conclusion_id" = "id"))
+
+    totales_actividad <- detalles %>%
+      group_by(actividad_id) %>%
+      summarise(puntos = sum(puntos), .groups = "drop")
+
+    esperados <- tibble(actividad_id = as.integer(ACTIVIDADES$id)) %>%
+      left_join(totales_actividad, by = "actividad_id") %>%
+      mutate(puntos = coalesce(as.integer(puntos), 0L))
+
+    if (any(esperados$puntos != as.integer(PUNTOS_POR_ACTIVIDAD))) {
+      detalle_error <- paste0(
+        vapply(seq_len(nrow(esperados)), function(i) {
+          paste0(activity_name(esperados$actividad_id[i]), ": ", esperados$puntos[i], "/", PUNTOS_POR_ACTIVIDAD)
+        }, character(1)),
+        collapse = "; "
+      )
+      stop("Debe asignar exactamente ", PUNTOS_POR_ACTIVIDAD, " puntos en cada actividad. ", detalle_error)
+    }
+
+    total <- sum(detalles$puntos)
+    if (total != as.integer(PUNTOS_TOTALES_POR_PERSONA)) {
+      stop("La priorización debe sumar ", PUNTOS_TOTALES_POR_PERSONA, " puntos en total.")
     }
 
     DBI::dbExecute(
@@ -576,14 +614,33 @@ insert_postgres_votos <- function(rows) {
       params = list(participante, pkey, total)
     )$id[1]
 
-    for (i in seq_len(nrow(rows))) {
-      DBI::dbExecute(
-        con,
-        "INSERT INTO public.detalle_votacion (envio_id, conclusion_id, puntos) VALUES ($1,$2,$3)",
-        params = list(envio, as.integer(rows$conclusion_id[i]), as.integer(rows$puntos[i]))
+    values_sql <- paste0(
+      "(", as.integer(envio), ",", detalles$conclusion_id, ",", detalles$puntos, ")",
+      collapse = ","
+    )
+    DBI::dbExecute(
+      con,
+      paste0(
+        "INSERT INTO public.detalle_votacion (envio_id, conclusion_id, puntos) VALUES ",
+        values_sql
       )
-    }
+    )
   })
+}
+
+has_existing_vote <- function(participante_key) {
+  if (MODO_ALMACENAMIENTO == "local") {
+    x <- read_local_votos()
+    pkey <- participante_key
+    return(any(x$participante_key == pkey))
+  }
+
+  x <- DBI::dbGetQuery(
+    DB_POOL,
+    "SELECT EXISTS(SELECT 1 FROM public.envios_votacion WHERE participante_clave = $1 AND vigente = true) AS existe",
+    params = list(participante_key)
+  )
+  isTRUE(x$existe[1])
 }
 
 # ------------------------------------------------------------
@@ -618,6 +675,9 @@ insert_observacion <- function(row) {
 
 save_conclusion <- function(row, mode) {
   if (MODO_ALMACENAMIENTO == "local") save_local_conclusion(row, mode) else save_postgres_conclusion(row, mode)
+  if (exists("PRIORITY_CACHE", inherits = TRUE)) {
+    PRIORITY_CACHE$last_refresh <- as.POSIXct("1970-01-01", tz = "UTC")
+  }
 }
 
 insert_votos <- function(rows) {
@@ -632,6 +692,13 @@ CACHE <- new.env(parent = emptyenv())
 CACHE$observaciones <- empty_observaciones()
 CACHE$conclusiones <- empty_conclusiones()
 CACHE$votos <- empty_votos()
+
+# Caché liviana para la pestaña de Priorización. Es compartida por todas las
+# sesiones que caen en el mismo worker de R, reduciendo lecturas simultáneas.
+PRIORITY_CACHE <- new.env(parent = emptyenv())
+PRIORITY_CACHE$conclusiones <- empty_conclusiones()
+PRIORITY_CACHE$last_refresh <- as.POSIXct("1970-01-01", tz = "UTC")
+PRIORITY_CACHE_TTL <- 60
 CACHE$last_read <- as.POSIXct(NA)
 
 refresh_cache <- function(force = FALSE) {
@@ -1000,9 +1067,39 @@ ui <- navbarPage(
         class = "page-intro",
         div(class = "eyebrow", "PRIORIZACIÓN"),
         tags$h2("Priorizar conclusiones"),
-        tags$p("Cada participante distribuye sus puntos entre las conclusiones registradas para priorización.")
+        tags$p("Cada participante dispone de 5 puntos para Recolección y transporte y otros 5 puntos para Barrido.")
       ),
-      uiOutput("prioritization_ui")
+      div(
+        class = "question-card",
+        div(class = "eyebrow", "PRIORIZACIÓN COLECTIVA"),
+        tags$h2("¿Cuáles de estas conclusiones deberían ser analizadas necesariamente en el estudio regulatorio?"),
+        tags$p("Distribuya exactamente 5 puntos en cada actividad. Los botones + y − funcionan localmente en su navegador y no recargan la aplicación.")
+      ),
+      div(
+        class = "voter-toolbar panel-card",
+        tags$label(`for` = "participant_name_client", "Nombre del participante"),
+        tags$input(
+          id = "participant_name_client",
+          type = "text",
+          class = "form-control",
+          placeholder = "Nombre y apellido",
+          maxlength = MAX_TEXTO,
+          autocomplete = "name"
+        ),
+        div(class = "field-help", paste0("Máximo ", MAX_TEXTO, " caracteres."))
+      ),
+      div(id = "voting_client_status", class = "voting-client-status", "Cargando conclusiones para priorización…"),
+      div(id = "voting_client_root", class = "voting-client-root"),
+      div(
+        class = "submit-vote-wrap",
+        tags$button(
+          id = "submit_votes_client",
+          type = "button",
+          class = "btn btn-primary btn-lg vote-submit",
+          disabled = "disabled",
+          paste0("Enviar priorización (", PUNTOS_POR_ACTIVIDAD, " + ", PUNTOS_POR_ACTIVIDAD, " puntos)")
+        )
+      )
     )
   ),
 
@@ -1408,151 +1505,166 @@ server <- function(input, output, session) {
 
   # ---------- PRIORIZACIÓN ----------
 
-  vote_state <- reactiveVal(setNames(integer(0), character(0)))
+  # La caché de conclusiones es compartida por las sesiones del mismo worker.
 
-  votable_conclusions <- reactive({
-    conclusiones_live() %>% filter(nzchar(conclusion)) %>% arrange(actividad_id, bloque, id)
-  })
+  get_prioritization_conclusions <- function(force = FALSE) {
+    now <- Sys.time()
+    fresh <- nrow(PRIORITY_CACHE$conclusiones) > 0 &&
+      as.numeric(difftime(now, PRIORITY_CACHE$last_refresh, units = "secs")) < PRIORITY_CACHE_TTL
 
-  observeEvent(votable_conclusions()$id, {
-    ids <- votable_conclusions()$id
-    old <- isolate(vote_state())
-    new <- setNames(integer(length(ids)), ids)
-    common <- intersect(names(old), ids)
-    if (length(common) > 0) new[common] <- old[common]
-    if (!identical(old, new)) vote_state(new)
-  }, ignoreInit = FALSE)
+    if (!force && fresh) return(PRIORITY_CACHE$conclusiones)
 
-  observeEvent(input$vote_change, {
-    req(input$vote_change$id, input$vote_change$delta)
-    id <- as.character(input$vote_change$id)
-    delta <- as.integer(input$vote_change$delta)
-    st <- vote_state()
-    if (!id %in% names(st)) return()
-    if (delta > 0 && sum(st) >= PUNTOS_POR_PERSONA) return()
-    if (delta < 0 && st[[id]] <= 0) return()
-    st[[id]] <- max(0L, st[[id]] + delta)
-    vote_state(st)
-  })
+    x <- if (MODO_ALMACENAMIENTO == "local") read_local_conclusiones() else read_postgres_conclusiones()
+    PRIORITY_CACHE$conclusiones <- x
+    PRIORITY_CACHE$last_refresh <- now
+    x
+  }
 
-  output$prioritization_ui <- renderUI({
-    tagList(
-      div(
-        class = "question-card",
-        div(class = "eyebrow", "PRIORIZACIÓN COLECTIVA"),
-        tags$h2("¿Cuáles de estas conclusiones deberían ser analizadas necesariamente en el estudio regulatorio?"),
-        tags$p("Distribuya exactamente ", tags$strong(PUNTOS_POR_PERSONA), " puntos entre las conclusiones.")
-      ),
-      div(class = "voter-toolbar panel-card", fluidRow(
-        column(7, tagList(textInput("participant_name", "Nombre del participante", placeholder = "Nombre y apellido"), div(class = "field-help", paste0("Máximo ", MAX_TEXTO, " caracteres.")))),
-        column(5, uiOutput("points_counter"))
-      )),
-      uiOutput("voting_groups"),
-      div(class = "submit-vote-wrap", uiOutput("submit_vote_ui"))
-    )
-  })
+  session_votable <- reactiveVal(empty_conclusiones())
 
-  output$points_counter <- renderUI({
-    used <- sum(vote_state(), na.rm = TRUE)
-    remaining <- PUNTOS_POR_PERSONA - used
-    div(class = paste("points-box", if (remaining == 0) "complete" else ""),
-        div(class = "points-big", remaining),
-        div(class = "points-label", ifelse(remaining == 1, "punto restante", "puntos restantes")),
-        div(class = "points-small", paste(used, "de", PUNTOS_POR_PERSONA, "asignados")))
-  })
+  send_voting_data <- function() {
+    c <- get_prioritization_conclusions(FALSE) %>%
+      filter(habilitada_votacion, nzchar(conclusion)) %>%
+      arrange(actividad_id, bloque, id)
 
-  output$voting_groups <- renderUI({
-    c <- votable_conclusions()
-    st <- vote_state()
-    if (nrow(c) == 0) return(div(class = "empty-state large", "Todavía no hay conclusiones habilitadas para priorización."))
+    session_votable(c)
 
-    tagList(lapply(unique(c$actividad_id), function(aid) {
+    activities_payload <- lapply(seq_len(nrow(ACTIVIDADES)), function(i) {
+      aid <- as.integer(ACTIVIDADES$id[i])
       ca <- c %>% filter(actividad_id == aid)
-      div(
-        class = "activity-vote-section",
-        tags$h3(activity_name(aid)),
-        tagList(lapply(seq_len(nrow(ca)), function(i) {
-          row <- ca[i, ]
-          value <- st[[row$id]] %||% 0L
-          div(
-            class = "finding-card vote-card",
-            div(class = "finding-topline", div(class = "finding-meta", row$bloque)),
-            div(class = "finding-text", row$conclusion),
-            div(class = "vote-control",
-                tags$button(type = "button", class = "vote-btn vote-minus", `data-id` = row$id, `data-delta` = -1, "−"),
-                div(class = "vote-number", value),
-                tags$button(type = "button", class = "vote-btn vote-plus", `data-id` = row$id, `data-delta` = 1, "+"))
+      list(
+        id = as.character(aid),
+        name = as.character(ACTIVIDADES$actividad[i]),
+        conclusions = lapply(seq_len(nrow(ca)), function(j) {
+          list(
+            id = as.character(ca$id[j]),
+            block = as.character(ca$bloque[j]),
+            conclusion = as.character(ca$conclusion[j])
           )
-        }))
+        })
       )
-    }))
-  })
+    })
 
-  output$submit_vote_ui <- renderUI({
-    complete <- sum(vote_state(), na.rm = TRUE) == PUNTOS_POR_PERSONA
-    name_ok <- nzchar(trimws(input$participant_name %||% ""))
-    btn <- actionButton("submit_votes", paste0("Enviar mis ", PUNTOS_POR_PERSONA, " puntos"), class = "btn-primary btn-lg vote-submit")
-    if (!(complete && name_ok)) btn <- tagAppendAttributes(btn, disabled = "disabled")
-    btn
-  })
+    session$sendCustomMessage("votingData", list(
+      pointsPerActivity = as.integer(PUNTOS_POR_ACTIVIDAD),
+      totalPoints = as.integer(PUNTOS_TOTALES_POR_PERSONA),
+      activities = activities_payload
+    ))
+  }
 
-  make_vote_rows <- function(participant, st) {
-    positive <- st[st > 0]
+  observeEvent(input$main_tabs, {
+    if (identical(input$main_tabs, "priorizacion")) {
+      send_voting_data()
+    }
+    if (identical(input$main_tabs, "resultados")) {
+      # Resultados toma una lectura fresca al entrar; normalmente solo la usan moderadores.
+      refresh_cache(TRUE)
+    }
+  }, ignoreInit = TRUE)
+
+  normalize_client_votes <- function(votes) {
+    if (is.null(votes) || length(votes) == 0) {
+      return(tibble(conclusion_id = character(), puntos = integer()))
+    }
+
+    if (is.data.frame(votes)) {
+      out <- tibble(
+        conclusion_id = as.character(votes$id),
+        puntos = as.integer(votes$puntos)
+      )
+    } else {
+      rows <- lapply(votes, function(v) {
+        if (is.null(v$id) || is.null(v$puntos)) return(NULL)
+        tibble(conclusion_id = as.character(v$id), puntos = as.integer(v$puntos))
+      })
+      rows <- Filter(Negate(is.null), rows)
+      if (length(rows) == 0) return(tibble(conclusion_id = character(), puntos = integer()))
+      out <- bind_rows(rows)
+    }
+
+    out %>%
+      filter(!is.na(puntos), puntos > 0, nzchar(conclusion_id)) %>%
+      group_by(conclusion_id) %>%
+      summarise(puntos = sum(puntos), .groups = "drop")
+  }
+
+  make_vote_rows <- function(participant, vote_items) {
     envio_id <- uuid::UUIDgenerate()
     tibble(
-      id = vapply(seq_along(positive), function(i) uuid::UUIDgenerate(), character(1)),
+      id = vapply(seq_len(nrow(vote_items)), function(i) uuid::UUIDgenerate(), character(1)),
       envio_id = envio_id,
       participante = trimws(participant),
       participante_key = normalizar_nombre(participant),
-      conclusion_id = names(positive),
-      puntos = as.integer(unname(positive)),
+      conclusion_id = as.character(vote_items$conclusion_id),
+      puntos = as.integer(vote_items$puntos),
       submitted_at = now_bogota()
     )
   }
 
-  pending_vote <- reactiveVal(NULL)
+  validate_local_vote <- function(vote_items) {
+    c <- session_votable()
+    if (nrow(c) == 0) stop("No hay conclusiones disponibles para priorización.")
 
-  save_current_vote <- function(participant, st) {
-    if (sum(st) != PUNTOS_POR_PERSONA) return(FALSE)
-    rows <- make_vote_rows(participant, st)
+    joined <- vote_items %>%
+      left_join(c %>% transmute(conclusion_id = as.character(id), actividad_id), by = "conclusion_id")
+    if (anyNA(joined$actividad_id)) stop("Una de las conclusiones ya no está disponible para priorización.")
+
+    totals <- joined %>%
+      group_by(actividad_id) %>% summarise(puntos = sum(puntos), .groups = "drop")
+    expected <- tibble(actividad_id = as.integer(ACTIVIDADES$id)) %>%
+      left_join(totals, by = "actividad_id") %>%
+      mutate(puntos = coalesce(as.integer(puntos), 0L))
+
+    if (any(expected$puntos != as.integer(PUNTOS_POR_ACTIVIDAD))) {
+      stop("Debe asignar exactamente ", PUNTOS_POR_ACTIVIDAD, " puntos en cada actividad.")
+    }
+    invisible(TRUE)
+  }
+
+  save_client_vote <- function(participant, vote_items) {
+    rows <- make_vote_rows(participant, vote_items)
     tryCatch({
+      if (MODO_ALMACENAMIENTO == "local") validate_local_vote(vote_items)
       insert_votos(rows)
-      refresh_cache(TRUE)
-      current_ids <- votable_conclusions()$id
-      vote_state(setNames(integer(length(current_ids)), current_ids))
-      showNotification("Priorización enviada correctamente.", type = "message", duration = 5)
+      session$sendCustomMessage("voteBusy", list(busy = FALSE))
+      session$sendCustomMessage("resetVotingClient", list())
+      showNotification(
+        paste0("Priorización enviada: ", PUNTOS_POR_ACTIVIDAD, " puntos en Recolección y transporte y ", PUNTOS_POR_ACTIVIDAD, " en Barrido."),
+        type = "message", duration = 6
+      )
       TRUE
     }, error = function(e) {
-      showNotification(paste("No se pudo guardar la votación:", conditionMessage(e)), type = "error", duration = 10)
+      session$sendCustomMessage("voteBusy", list(busy = FALSE))
+      showNotification(paste("No se pudo guardar la priorización:", conditionMessage(e)), type = "error", duration = 12)
       FALSE
     })
   }
 
-  observeEvent(input$submit_votes, {
-    participant <- trimws(input$participant_name %||% "")
-    st <- vote_state()
-    if (!nzchar(participant) || sum(st) != PUNTOS_POR_PERSONA) return()
+  observeEvent(input$vote_submit_client, {
+    payload <- input$vote_submit_client
+    participant <- trimws(as.character(payload$participant %||% ""))
+    vote_items <- normalize_client_votes(payload$votes)
+
+    if (!nzchar(participant)) {
+      session$sendCustomMessage("voteBusy", list(busy = FALSE))
+      showNotification("Escriba su nombre antes de enviar la priorización.", type = "error", duration = 6)
+      return()
+    }
     if (nchar(participant, type = "chars") > MAX_TEXTO) {
-      showNotification(paste0("El nombre del participante puede tener máximo ", MAX_TEXTO, " caracteres."), type = "error")
+      session$sendCustomMessage("voteBusy", list(busy = FALSE))
+      showNotification(paste0("El nombre puede tener máximo ", MAX_TEXTO, " caracteres."), type = "error", duration = 6)
+      return()
+    }
+    if (nrow(vote_items) == 0) {
+      session$sendCustomMessage("voteBusy", list(busy = FALSE))
+      showNotification("No se recibieron puntos para guardar.", type = "error", duration = 6)
       return()
     }
 
-    existing <- votos_live() %>% filter(participante_key == normalizar_nombre(participant))
-    if (nrow(existing) > 0) {
-      pending_vote(list(participant = participant, state = st))
-      showModal(modalDialog(
-        title = "Ya existe una priorización con este nombre",
-        tags$p("Si continúa, el nuevo envío será el vigente para el cálculo."),
-        footer = tagList(modalButton("Cancelar"), actionButton("confirm_replace_vote", "Reemplazar mi priorización", class = "btn-danger"))
-      ))
-    } else save_current_vote(participant, st)
-  })
-
-  observeEvent(input$confirm_replace_vote, {
-    pv <- pending_vote(); req(pv)
-    removeModal()
-    save_current_vote(pv$participant, pv$state)
-    pending_vote(NULL)
+    # La validación definitiva de 5 puntos por actividad se hace dentro de la misma
+    # transacción PostgreSQL. No se ejecuta una consulta preliminar por participante.
+    session$sendCustomMessage("voteBusy", list(busy = TRUE))
+    save_client_vote(participant, vote_items)
   })
 
   # ---------- RESULTADOS ----------
@@ -1578,7 +1690,7 @@ server <- function(input, output, session) {
     latest <- latest_vote_rows(votos_live())
     voters <- n_distinct(latest$participante_key)
     emitted <- sum(latest$puntos, na.rm = TRUE)
-    expected <- N_PARTICIPANTES_ESPERADOS * PUNTOS_POR_PERSONA
+    expected <- N_PARTICIPANTES_ESPERADOS * PUNTOS_TOTALES_POR_PERSONA
     c <- conclusiones_live()
     div(
       class = "metrics-grid four",
