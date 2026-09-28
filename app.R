@@ -1172,7 +1172,7 @@ ui <- navbarPage(
 
   footer = div(
     class = "app-footer",
-    paste0("Modo: ", toupper(MODO_ALMACENAMIENTO), " · Zona horaria: ", ZONA_HORARIA, " · Captura se sincroniza automáticamente; Consolidado se actualiza manualmente")
+    paste0("Modo: ", toupper(MODO_ALMACENAMIENTO), " · Zona horaria: ", ZONA_HORARIA, " · Captura se sincroniza automáticamente; Consolidado y Resultados se actualizan manualmente")
   )
 )
 
@@ -1203,10 +1203,24 @@ server <- function(input, output, session) {
   consolidation_obs <- reactiveVal(CACHE$observaciones)
   consolidation_conc <- reactiveVal(CACHE$conclusiones)
 
+  # Resultados usa también una instantánea estable. No depende del temporizador
+  # de 2 segundos para evitar parpadeos y recálculos constantes.
+  results_obs <- reactiveVal(CACHE$observaciones)
+  results_conc <- reactiveVal(CACHE$conclusiones)
+  results_votes <- reactiveVal(CACHE$votos)
+
   refresh_consolidation_snapshot <- function(force = TRUE) {
     refresh_cache(force)
     consolidation_obs(CACHE$observaciones)
     consolidation_conc(CACHE$conclusiones)
+    invisible(TRUE)
+  }
+
+  refresh_results_snapshot <- function(force = TRUE) {
+    refresh_cache(force)
+    results_obs(CACHE$observaciones)
+    results_conc(CACHE$conclusiones)
+    results_votes(CACHE$votos)
     invisible(TRUE)
   }
 
@@ -1665,8 +1679,13 @@ server <- function(input, output, session) {
 
   observeEvent(input$main_tabs, {
     if (identical(input$main_tabs, "resultados")) {
-      refresh_cache(TRUE)
+      refresh_results_snapshot(TRUE)
     }
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$refresh_results, {
+    refresh_results_snapshot(TRUE)
+    showNotification("Resultados actualizados con la información más reciente.", type = "message", duration = 3)
   }, ignoreInit = TRUE)
 
   normalize_client_votes <- function(votes) {
@@ -1781,9 +1800,11 @@ server <- function(input, output, session) {
       div(class = "results-header", tags$h2("Resultados consolidados"), tags$p("Resultados de las conclusiones habilitadas para priorización.")),
       fluidRow(
         column(3, numericInput("top_n", "Conclusiones a priorizar", value = N_PRIORIZADOS_DEFAULT, min = 1, max = 100)),
-        column(5, selectInput("results_activity", "Filtrar por actividad", choices = c("Todas" = "", setNames(ACTIVIDADES$id, ACTIVIDADES$actividad)))),
-        column(4, br(), downloadButton("download_excel", "Descargar Excel completo", class = "btn-success btn-lg full-action"))
+        column(4, selectInput("results_activity", "Filtrar por actividad", choices = c("Todas" = "", setNames(ACTIVIDADES$id, ACTIVIDADES$actividad)))),
+        column(2, br(), actionButton("refresh_results", "Actualizar resultados", icon = icon("refresh"), class = "btn-primary full-action")),
+        column(3, br(), downloadButton("download_excel", "Descargar Excel completo", class = "btn-success btn-lg full-action"))
       ),
+      div(class = "field-help consolidation-refresh-help", "Los resultados permanecen estables mientras consulta esta pantalla. Pulse Actualizar resultados para incorporar votos o conclusiones nuevos."),
       uiOutput("general_metrics"),
       div(class = "panel-card", tags$h3("Resumen por actividad"), tableOutput("activity_summary")),
       div(class = "panel-card", tags$h3("Ranking de conclusiones"), tableOutput("ranking_table"))
@@ -1791,17 +1812,17 @@ server <- function(input, output, session) {
   })
 
   current_top_n <- reactive(as.integer(input$top_n %||% N_PRIORIZADOS_DEFAULT))
-  ranking_live <- reactive(build_ranking(conclusiones_live(), votos_live(), current_top_n()))
+  ranking_results <- reactive(build_ranking(results_conc(), results_votes(), current_top_n()))
 
   output$general_metrics <- renderUI({
-    latest <- latest_vote_rows(votos_live())
+    latest <- latest_vote_rows(results_votes())
     voters <- n_distinct(latest$participante_key)
     emitted <- sum(latest$puntos, na.rm = TRUE)
     expected <- N_PARTICIPANTES_ESPERADOS * PUNTOS_TOTALES_POR_PERSONA
-    c <- conclusiones_live()
+    c <- results_conc()
     div(
       class = "metrics-grid four",
-      metric_card("Observaciones capturadas", nrow(consolidation_obs())),
+      metric_card("Observaciones capturadas", nrow(results_obs())),
       metric_card("Conclusiones", nrow(c), paste(sum(c$habilitada_votacion), "habilitadas para votar")),
       metric_card("Personas que votaron", paste0(voters, " / ", N_PARTICIPANTES_ESPERADOS)),
       metric_card("Puntos emitidos", paste0(emitted, " / ", expected))
@@ -1809,9 +1830,9 @@ server <- function(input, output, session) {
   })
 
   output$activity_summary <- renderTable({
-    g <- groups_live()
-    c <- conclusiones_live()
-    r <- ranking_live()
+    g <- build_group_summary(results_obs())
+    c <- results_conc()
+    r <- ranking_results()
 
     base <- tibble(actividad_id = ACTIVIDADES$id, Actividad = ACTIVIDADES$actividad) %>%
       left_join(g %>% group_by(actividad_id) %>% summarise(
@@ -1835,7 +1856,7 @@ server <- function(input, output, session) {
   }, striped = TRUE, bordered = FALSE, spacing = "s", width = "100%")
 
   output$ranking_table <- renderTable({
-    x <- ranking_live()
+    x <- ranking_results()
     aid <- input$results_activity %||% ""
     if (nzchar(aid)) x <- x %>% filter(actividad_id == as.integer(aid))
     x %>% transmute(
