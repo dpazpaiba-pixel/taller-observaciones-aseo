@@ -15,7 +15,6 @@
 
   // Estado de priorización totalmente local al navegador.
   // Los clics + / - NO generan eventos Shiny ni consultas al servidor.
-  var voteConfig = null;
   var voteState = {};
   var voteActivityByConclusion = {};
   var localVoteBusy = false;
@@ -77,6 +76,20 @@
     return node;
   }
 
+  function votingSections() {
+    return Array.from(document.querySelectorAll('.activity-vote-section[data-activity-id]'));
+  }
+
+  function ensureVotingStateFromDOM() {
+    document.querySelectorAll('[data-vote-local="true"]').forEach(function (btn) {
+      var id = String(btn.dataset.id || '');
+      var aid = String(btn.dataset.activityId || '');
+      if (!id || !aid) return;
+      if (typeof voteState[id] === 'undefined') voteState[id] = 0;
+      voteActivityByConclusion[id] = aid;
+    });
+  }
+
   function activityTotal(activityId) {
     var total = 0;
     Object.keys(voteState).forEach(function (id) {
@@ -88,15 +101,23 @@
   }
 
   function updateVotingUI() {
-    if (!voteConfig) return;
-    var limit = Number(voteConfig.pointsPerActivity || 5);
-    var allComplete = true;
-    var hasAllActivities = true;
+    ensureVotingStateFromDOM();
 
-    (voteConfig.activities || []).forEach(function (activity) {
-      var aid = String(activity.id);
+    var sections = votingSections();
+    var allComplete = sections.length > 0;
+    var hasAllActivities = sections.length > 0;
+    var summaries = [];
+
+    sections.forEach(function (section) {
+      var aid = String(section.dataset.activityId || '');
+      var name = String(section.dataset.activityName || '');
+      var limit = Number(section.dataset.pointsLimit || 5);
+      var hasConclusions = String(section.dataset.hasConclusions || 'false') === 'true';
       var total = activityTotal(aid);
       var remaining = Math.max(0, limit - total);
+
+      summaries.push(name + ': ' + total + '/' + limit);
+
       var counter = document.querySelector('[data-activity-counter="' + aid + '"]');
       if (counter) {
         counter.classList.toggle('complete', total === limit);
@@ -108,22 +129,20 @@
         if (small) small.textContent = total + ' de ' + limit + ' asignados';
       }
 
-      if (!activity.conclusions || activity.conclusions.length === 0) {
+      if (!hasConclusions) {
         hasAllActivities = false;
         allComplete = false;
       } else if (total !== limit) {
         allComplete = false;
       }
-    });
 
-    document.querySelectorAll('[data-vote-local="true"]').forEach(function (btn) {
-      var id = btn.dataset.id;
-      var delta = Number(btn.dataset.delta || 0);
-      var aid = String(voteActivityByConclusion[id]);
-      var value = Number(voteState[id] || 0);
-      var total = activityTotal(aid);
-      if (delta > 0) btn.disabled = localVoteBusy || total >= limit;
-      if (delta < 0) btn.disabled = localVoteBusy || value <= 0;
+      section.querySelectorAll('[data-vote-local="true"]').forEach(function (btn) {
+        var id = String(btn.dataset.id || '');
+        var delta = Number(btn.dataset.delta || 0);
+        var value = Number(voteState[id] || 0);
+        if (delta > 0) btn.disabled = localVoteBusy || total >= limit;
+        if (delta < 0) btn.disabled = localVoteBusy || value <= 0;
+      });
     });
 
     document.querySelectorAll('[data-vote-number]').forEach(function (node) {
@@ -135,106 +154,20 @@
     var submit = document.getElementById('submit_votes_client');
     if (submit) {
       submit.disabled = localVoteBusy || !allComplete || !hasAllActivities || !nameOk;
-      if (!localVoteBusy) {
-        submit.textContent = 'Enviar priorización (' + limit + ' + ' + limit + ' puntos)';
-      }
+      if (!localVoteBusy) submit.textContent = 'Enviar priorización (5 + 5 puntos)';
     }
 
     var status = document.getElementById('voting_client_status');
-    if (status && voteConfig.activities) {
-      var summary = voteConfig.activities.map(function (activity) {
-        return activity.name + ': ' + activityTotal(activity.id) + '/' + limit;
-      }).join(' · ');
+    if (status && sections.length) {
       status.textContent = allComplete && nameOk
-        ? 'Priorización completa. Ya puede enviarla. · ' + summary
-        : 'Complete ' + limit + ' puntos en cada actividad. · ' + summary;
+        ? 'Priorización completa. Ya puede enviarla. · ' + summaries.join(' · ')
+        : 'Complete 5 puntos en cada actividad. · ' + summaries.join(' · ');
       status.classList.toggle('complete', allComplete && nameOk);
     }
   }
 
-  function renderVotingData(message) {
-    voteConfig = message || { pointsPerActivity: 5, activities: [] };
-    voteState = {};
-    voteActivityByConclusion = {};
-    localVoteBusy = false;
-
-    var root = document.getElementById('voting_client_root');
-    var status = document.getElementById('voting_client_status');
-    if (!root) return;
-    root.innerHTML = '';
-
-    var activities = voteConfig.activities || [];
-    if (!activities.length) {
-      if (status) status.textContent = 'Todavía no hay conclusiones habilitadas para priorización.';
-      return;
-    }
-
-    activities.forEach(function (activity) {
-      var section = el('section', 'activity-vote-section');
-      section.dataset.activityId = String(activity.id);
-
-      var header = el('div', 'voting-activity-header');
-      header.appendChild(el('h3', '', activity.name));
-
-      var counter = el('div', 'points-box activity-points-counter');
-      counter.dataset.activityCounter = String(activity.id);
-      counter.appendChild(el('div', 'points-big', String(voteConfig.pointsPerActivity || 5)));
-      counter.appendChild(el('div', 'points-label', 'puntos restantes'));
-      counter.appendChild(el('div', 'points-small', '0 de ' + (voteConfig.pointsPerActivity || 5) + ' asignados'));
-      header.appendChild(counter);
-      section.appendChild(header);
-
-      var conclusions = activity.conclusions || [];
-      if (!conclusions.length) {
-        section.appendChild(el('div', 'empty-state', 'No hay conclusiones disponibles en esta actividad.'));
-      } else {
-        conclusions.forEach(function (item) {
-          var id = String(item.id);
-          voteState[id] = 0;
-          voteActivityByConclusion[id] = String(activity.id);
-
-          var card = el('div', 'finding-card vote-card');
-          var top = el('div', 'finding-topline');
-          top.appendChild(el('div', 'finding-meta', item.block || ''));
-          card.appendChild(top);
-          card.appendChild(el('div', 'finding-text', item.conclusion || ''));
-
-          var control = el('div', 'vote-control');
-          var minus = el('button', 'vote-btn vote-minus', '−');
-          minus.type = 'button';
-          minus.dataset.voteLocal = 'true';
-          minus.dataset.id = id;
-          minus.dataset.delta = '-1';
-          minus.setAttribute('aria-label', 'Quitar un punto');
-
-          var number = el('div', 'vote-number', '0');
-          number.dataset.voteNumber = id;
-          number.setAttribute('aria-live', 'polite');
-
-          var plus = el('button', 'vote-btn vote-plus', '+');
-          plus.type = 'button';
-          plus.dataset.voteLocal = 'true';
-          plus.dataset.id = id;
-          plus.dataset.delta = '1';
-          plus.setAttribute('aria-label', 'Agregar un punto');
-
-          control.appendChild(minus);
-          control.appendChild(number);
-          control.appendChild(plus);
-          card.appendChild(control);
-          section.appendChild(card);
-        });
-      }
-
-      root.appendChild(section);
-    });
-
-    applyRememberedName();
-    updateVotingUI();
-  }
-
   function submitClientVote() {
-    if (!voteConfig || localVoteBusy) return;
+    if (localVoteBusy) return;
     var submit = document.getElementById('submit_votes_client');
     if (!submit || submit.disabled) return;
 
@@ -278,16 +211,22 @@
     var localVoteButton = event.target.closest('[data-vote-local="true"]');
     if (localVoteButton) {
       event.preventDefault();
-      if (!voteConfig || localVoteBusy) return;
+      if (localVoteBusy) return;
+
+      ensureVotingStateFromDOM();
+
       var id = String(localVoteButton.dataset.id || '');
+      var aid = String(localVoteButton.dataset.activityId || voteActivityByConclusion[id] || '');
       var delta = Number(localVoteButton.dataset.delta || 0);
-      if (!Object.prototype.hasOwnProperty.call(voteState, id)) return;
-      var limit = Number(voteConfig.pointsPerActivity || 5);
-      var aid = voteActivityByConclusion[id];
+      var section = localVoteButton.closest('.activity-vote-section');
+      var limit = Number(section && section.dataset.pointsLimit ? section.dataset.pointsLimit : 5);
+      var current = Number(voteState[id] || 0);
       var total = activityTotal(aid);
+
       if (delta > 0 && total >= limit) return;
-      if (delta < 0 && Number(voteState[id] || 0) <= 0) return;
-      voteState[id] = Math.max(0, Number(voteState[id] || 0) + delta);
+      if (delta < 0 && current <= 0) return;
+
+      voteState[id] = Math.max(0, current + delta);
       updateVotingUI();
       return;
     }
@@ -343,7 +282,7 @@
   });
 
   function registerHandlers() {
-    if (handlersRegistered || !window.Shiny) return;
+    if (handlersRegistered || !window.Shiny) return false;
     handlersRegistered = true;
 
     Shiny.addCustomMessageHandler('resetCategories', function () {
@@ -360,10 +299,6 @@
       applyRememberedGroup();
     });
 
-    Shiny.addCustomMessageHandler('votingData', function (message) {
-      renderVotingData(message);
-    });
-
     Shiny.addCustomMessageHandler('voteBusy', function (message) {
       localVoteBusy = !!(message && message.busy);
       var submit = document.getElementById('submit_votes_client');
@@ -372,6 +307,7 @@
     });
 
     Shiny.addCustomMessageHandler('resetVotingClient', function () {
+      ensureVotingStateFromDOM();
       Object.keys(voteState).forEach(function (id) { voteState[id] = 0; });
       localVoteBusy = false;
       updateVotingUI();
@@ -381,7 +317,24 @@
       applyRememberedName();
       applyRememberedGroup();
       applyStaticLimits();
+      updateVotingUI();
     }, 250);
+
+    return true;
+  }
+
+  if (window.jQuery) {
+    jQuery(document).on('shiny:value', function (event) {
+      if (event && event.name === 'prioritization_cards_ui') {
+        setTimeout(function () {
+          voteState = {};
+          voteActivityByConclusion = {};
+          localVoteBusy = false;
+          applyRememberedName();
+          updateVotingUI();
+        }, 0);
+      }
+    });
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -391,6 +344,23 @@
     applyStaticLimits();
   });
 
-  if (window.Shiny) registerHandlers();
-  else document.addEventListener('shiny:connected', registerHandlers, { once: true });
+  // Shiny dispara shiny:connected como evento jQuery en algunos clientes y
+  // versiones. Además hacemos polling breve para que el registro sea robusto
+  // aunque app.js se cargue antes que Shiny.
+  if (window.Shiny) {
+    registerHandlers();
+  } else {
+    if (window.jQuery) {
+      jQuery(document).one('shiny:connected', function () { registerHandlers(); });
+    }
+    document.addEventListener('shiny:connected', function () { registerHandlers(); }, { once: true });
+
+    var shinyWaitCount = 0;
+    var shinyWait = setInterval(function () {
+      shinyWaitCount += 1;
+      if (registerHandlers() || shinyWaitCount >= 200) {
+        clearInterval(shinyWait);
+      }
+    }, 100);
+  }
 })();
