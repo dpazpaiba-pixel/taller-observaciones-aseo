@@ -1,6 +1,6 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V7.8: priorización liviana para alta concurrencia (5 puntos por actividad)
+# V7.9: priorización liviana + handshake robusto cliente/servidor (5 puntos por actividad)
 #       Comercialización queda oculta para esta sesión
 #       Sin preguntas del instrumento en ninguna actividad
 #       Límites: Observación 50 caracteres; demás textos libres 100
@@ -1559,6 +1559,14 @@ server <- function(input, output, session) {
     if (identical(input$main_tabs, "resultados")) {
       # Resultados toma una lectura fresca al entrar; normalmente solo la usan moderadores.
       refresh_cache(TRUE)
+    }
+  }, ignoreInit = TRUE)
+
+  # Handshake navegador-servidor: si el JavaScript termina de cargarse después
+  # de que Shiny abrió la pestaña, el cliente avisa que ya puede recibir datos.
+  observeEvent(input$voting_client_ready, {
+    if (identical(input$main_tabs, "priorizacion")) {
+      send_voting_data()
     }
   }, ignoreInit = TRUE)
 
