@@ -1,7 +1,7 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V8.0: priorización estable server-rendered una sola vez + controles locales JS (5 puntos por actividad)
-#       Comercialización queda oculta para esta sesión
+# V8.2: incorpora nuevas actividades y mantiene priorización liviana con filtro local por actividad
+#       5 puntos independientes por cada actividad incluida en la priorización
 #       Sin preguntas del instrumento en ninguna actividad
 #       Límites: Observación 50 caracteres; demás textos libres 100
 #       Captura de observaciones por grupos
@@ -29,17 +29,32 @@ CATEGORIAS <- c(
 )
 
 ACTIVIDADES <- data.frame(
-  id = c(7L, 8L),
+  id = c(7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L),
   actividad = c(
     "Recolección y transporte",
-    "Barrido"
+    "Barrido",
+    "Comercialización",
+    "Corte de césped",
+    "Poda",
+    "Lavado",
+    "Mantenimiento e instalación de cestas",
+    "Limpieza de playas"
   ),
   stringsAsFactors = FALSE
 )
 
 PUNTOS_TOTALES_POR_PERSONA <- PUNTOS_POR_ACTIVIDAD * nrow(ACTIVIDADES)
 
+BLOQUES_OPERATIVOS_NUEVOS <- c(
+  "Cuadrilla y personal",
+  "Herramientas, equipos, vehículos e insumos",
+  "Dotación y EPP",
+  "Manejo de residuos resultantes",
+  "Activos y personal compartidos"
+)
+
 BLOQUES_POR_ACTIVIDAD <- list(
+  # Recolección y transporte: se conserva sin cambios.
   `7` = c(
     "Tipo de vehículo, condiciones y estado",
     "Cuadrilla",
@@ -48,6 +63,7 @@ BLOQUES_POR_ACTIVIDAD <- list(
     "Presentación residuos",
     "Zonas de difícil acceso"
   ),
+  # Barrido: se conserva sin cambios.
   `8` = c(
     "Cuadrilla y personal",
     "Herramientas y equipos",
@@ -55,7 +71,24 @@ BLOQUES_POR_ACTIVIDAD <- list(
     "Muestra observada (qué evidenciamos al observar la actividad)",
     "Activos y personal compartidos",
     "Transversal"
-  )
+  ),
+  # Comercialización: bloques propios definidos por el equipo.
+  `9` = c(
+    "Reporte de información al SUI",
+    "Facturación conjunta, distribución y liquidación",
+    "Atención al usuario (PQRS)",
+    "Publicación y campañas",
+    "Indexación",
+    "Subsidios y contribuciones",
+    "Personal",
+    "Aplicación de la metodología"
+  ),
+  # Nuevas actividades operativas: bloques uniformes.
+  `10` = BLOQUES_OPERATIVOS_NUEVOS,
+  `11` = BLOQUES_OPERATIVOS_NUEVOS,
+  `12` = BLOQUES_OPERATIVOS_NUEVOS,
+  `13` = BLOQUES_OPERATIVOS_NUEVOS,
+  `14` = BLOQUES_OPERATIVOS_NUEVOS
 )
 
 COMISIONES <- c(
@@ -398,7 +431,7 @@ read_postgres_observaciones <- function() {
            municipios, implicacion, creado_en
     FROM public.observaciones
     WHERE activa = true
-      AND actividad_id IN (7, 8)
+      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14)
     ORDER BY creado_en, id
   ")
   if (nrow(x) == 0) return(empty_observaciones())
@@ -437,7 +470,7 @@ read_postgres_conclusiones <- function() {
            habilitada_priorizacion, actualizado_por, actualizado_en
     FROM public.conclusiones
     WHERE activa = true
-      AND actividad_id IN (7, 8)
+      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14)
     ORDER BY actividad_id, bloque, id
   ")
   if (nrow(x) == 0) return(empty_conclusiones())
@@ -970,12 +1003,7 @@ ui <- navbarPage(
         class = "page-intro",
         div(class = "eyebrow", "CAPTURA POR GRUPOS"),
         tags$h2("Registrar una observación"),
-        tags$p("Cada grupo registra observaciones únicamente para Recolección y transporte o Barrido. Los registros se sincronizan entre sesiones pocos segundos después de guardarse."),
-        tags$div(
-          style = "margin-top:14px; padding:12px 14px; border-left:5px solid #00628C; background:#EAF6FA; color:#153744; font-family:Verdana, Geneva, sans-serif;",
-          tags$strong("Periodo de recepción de aportes: "),
-          "la captura estará disponible desde hoy, jueves 24 de septiembre, y se mantendrá abierta hasta finalizar los primeros 15 minutos de la sesión del viernes 25 de septiembre. Durante este periodo cada grupo podrá registrar y completar sus observaciones."
-        )
+        tags$p("Cada grupo registra observaciones para la actividad del servicio que corresponda. Los registros se sincronizan entre sesiones pocos segundos después de guardarse.")
       ),
       fluidRow(
         column(
@@ -1067,7 +1095,7 @@ ui <- navbarPage(
         class = "page-intro",
         div(class = "eyebrow", "PRIORIZACIÓN"),
         tags$h2("Priorizar conclusiones"),
-        tags$p("Cada participante dispone de 5 puntos para Recolección y transporte y otros 5 puntos para Barrido.")
+        tags$p("Cada participante dispone de 5 puntos independientes para cada actividad. Use el filtro para trabajar una actividad a la vez; los puntos se conservan al cambiar de actividad.")
       ),
       div(
         class = "question-card",
@@ -1077,24 +1105,45 @@ ui <- navbarPage(
       ),
       div(
         class = "voter-toolbar panel-card",
-        tags$label(`for` = "participant_name_client", "Nombre del participante"),
-        tags$input(
-          id = "participant_name_client",
-          type = "text",
-          class = "form-control",
-          placeholder = "Nombre y apellido",
-          maxlength = MAX_TEXTO,
-          autocomplete = "name"
-        ),
-        div(class = "field-help", paste0("Máximo ", MAX_TEXTO, " caracteres."))
+        div(
+          class = "row",
+          div(
+            class = "col-sm-6",
+            tags$label(`for` = "participant_name_client", "Nombre del participante"),
+            tags$input(
+              id = "participant_name_client",
+              type = "text",
+              class = "form-control",
+              placeholder = "Nombre y apellido",
+              maxlength = MAX_TEXTO,
+              autocomplete = "name"
+            ),
+            div(class = "field-help", paste0("Máximo ", MAX_TEXTO, " caracteres."))
+          ),
+          div(
+            class = "col-sm-6",
+            tags$label(`for` = "priority_activity_filter_client", "Actividad a priorizar"),
+            tags$select(
+              id = "priority_activity_filter_client",
+              class = "form-control",
+              tags$option(value = "", "Todas las actividades"),
+              lapply(seq_len(nrow(ACTIVIDADES)), function(i) {
+                tags$option(
+                  value = as.character(ACTIVIDADES$id[i]),
+                  as.character(ACTIVIDADES$actividad[i])
+                )
+              })
+            ),
+            div(class = "field-help", "El filtro solo cambia la vista; los puntos asignados se conservan al cambiar de actividad.")
+          )
+        )
       ),
       div(
         id = "voting_client_status",
         class = "voting-client-status",
         paste0(
           "Asigne exactamente ", PUNTOS_POR_ACTIVIDAD,
-          " puntos en Recolección y transporte y ",
-          PUNTOS_POR_ACTIVIDAD, " puntos en Barrido."
+          " puntos en cada actividad. Puede usar el filtro para avanzar una actividad a la vez."
         )
       ),
       div(
@@ -1109,7 +1158,7 @@ ui <- navbarPage(
           type = "button",
           class = "btn btn-primary btn-lg vote-submit",
           disabled = "disabled",
-          paste0("Enviar priorización (", PUNTOS_POR_ACTIVIDAD, " + ", PUNTOS_POR_ACTIVIDAD, " puntos)")
+          "Enviar priorización"
         )
       )
     )
@@ -1687,7 +1736,7 @@ server <- function(input, output, session) {
       session$sendCustomMessage("voteBusy", list(busy = FALSE))
       session$sendCustomMessage("resetVotingClient", list())
       showNotification(
-        paste0("Priorización enviada: ", PUNTOS_POR_ACTIVIDAD, " puntos en Recolección y transporte y ", PUNTOS_POR_ACTIVIDAD, " en Barrido."),
+        paste0("Priorización enviada correctamente: ", PUNTOS_POR_ACTIVIDAD, " puntos por actividad."),
         type = "message", duration = 6
       )
       TRUE
