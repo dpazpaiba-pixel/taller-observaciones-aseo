@@ -18,6 +18,7 @@
   var voteState = {};
   var voteActivityByConclusion = {};
   var localVoteBusy = false;
+  var savedVoteActivities = {};
 
   function applyLimitToElement(el) {
     if (!el || !el.id) return;
@@ -85,8 +86,9 @@
     var selected = filter ? String(filter.value || '') : '';
     votingSections().forEach(function (section) {
       var aid = String(section.dataset.activityId || '');
-      section.style.display = (!selected || selected === aid) ? '' : 'none';
+      section.style.display = (selected && selected === aid) ? '' : 'none';
     });
+    updateVotingUI();
   }
 
   function ensureVotingStateFromDOM() {
@@ -112,20 +114,17 @@
   function updateVotingUI() {
     ensureVotingStateFromDOM();
 
-    var sections = votingSections();
-    var allComplete = sections.length > 0;
-    var hasAllActivities = sections.length > 0;
-    var summaries = [];
+    var filter = document.getElementById('priority_activity_filter_client');
+    var selected = filter ? String(filter.value || '') : '';
+    var selectedSection = null;
 
-    sections.forEach(function (section) {
+    votingSections().forEach(function (section) {
       var aid = String(section.dataset.activityId || '');
-      var name = String(section.dataset.activityName || '');
       var limit = Number(section.dataset.pointsLimit || 5);
-      var hasConclusions = String(section.dataset.hasConclusions || 'false') === 'true';
       var total = activityTotal(aid);
       var remaining = Math.max(0, limit - total);
 
-      summaries.push(name + ': ' + total + '/' + limit);
+      if (selected && aid === selected) selectedSection = section;
 
       var counter = document.querySelector('[data-activity-counter="' + aid + '"]');
       if (counter) {
@@ -136,13 +135,6 @@
         if (big) big.textContent = String(remaining);
         if (label) label.textContent = remaining === 1 ? 'punto restante' : 'puntos restantes';
         if (small) small.textContent = total + ' de ' + limit + ' asignados';
-      }
-
-      if (!hasConclusions) {
-        hasAllActivities = false;
-        allComplete = false;
-      } else if (total !== limit) {
-        allComplete = false;
       }
 
       section.querySelectorAll('[data-vote-local="true"]').forEach(function (btn) {
@@ -161,17 +153,45 @@
     var nameInput = document.getElementById('participant_name_client');
     var nameOk = !!(nameInput && (nameInput.value || '').trim());
     var submit = document.getElementById('submit_votes_client');
-    if (submit) {
-      submit.disabled = localVoteBusy || !allComplete || !hasAllActivities || !nameOk;
-      if (!localVoteBusy) submit.textContent = 'Enviar priorización';
+    var status = document.getElementById('voting_client_status');
+
+    if (!selected || !selectedSection) {
+      if (submit) {
+        submit.disabled = true;
+        if (!localVoteBusy) submit.textContent = 'Seleccione una actividad';
+      }
+      if (status) {
+        status.textContent = 'Seleccione una actividad para asignar y enviar sus 5 puntos.';
+        status.classList.remove('complete');
+      }
+      return;
     }
 
-    var status = document.getElementById('voting_client_status');
-    if (status && sections.length) {
-      status.textContent = allComplete && nameOk
-        ? 'Priorización completa. Ya puede enviarla. · ' + summaries.join(' · ')
-        : 'Complete 5 puntos en cada actividad. · ' + summaries.join(' · ');
-      status.classList.toggle('complete', allComplete && nameOk);
+    var activityName = String(selectedSection.dataset.activityName || 'Actividad');
+    var limit = Number(selectedSection.dataset.pointsLimit || 5);
+    var hasConclusions = String(selectedSection.dataset.hasConclusions || 'false') === 'true';
+    var total = activityTotal(selected);
+    var complete = hasConclusions && total === limit;
+
+    var alreadySaved = !!savedVoteActivities[selected];
+    if (submit) {
+      submit.disabled = localVoteBusy || !complete || !nameOk;
+      if (!localVoteBusy) {
+        submit.textContent = (alreadySaved ? 'Reenviar priorización de ' : 'Enviar priorización de ') + activityName;
+      }
+    }
+
+    if (status) {
+      if (!hasConclusions) {
+        status.textContent = 'No hay conclusiones habilitadas para ' + activityName + '.';
+      } else if (complete && nameOk && alreadySaved) {
+        status.textContent = activityName + ': priorización enviada. Puede pasar a otra actividad o modificar y reenviar estos 5 puntos.';
+      } else if (complete && nameOk) {
+        status.textContent = activityName + ': 5/5 puntos. Ya puede enviar esta actividad.';
+      } else {
+        status.textContent = activityName + ': ' + total + '/' + limit + ' puntos asignados.';
+      }
+      status.classList.toggle('complete', complete && nameOk);
     }
   }
 
@@ -184,8 +204,14 @@
     var participant = nameInput ? (nameInput.value || '').trim() : '';
     if (!participant) return;
 
+    var filter = document.getElementById('priority_activity_filter_client');
+    var activityId = filter ? String(filter.value || '') : '';
+    if (!activityId) return;
+
     var votes = Object.keys(voteState)
-      .filter(function (id) { return Number(voteState[id] || 0) > 0; })
+      .filter(function (id) {
+        return String(voteActivityByConclusion[id] || '') === activityId && Number(voteState[id] || 0) > 0;
+      })
       .map(function (id) { return { id: id, puntos: Number(voteState[id]) }; });
 
     localVoteBusy = true;
@@ -195,6 +221,7 @@
     if (window.Shiny) {
       Shiny.setInputValue('vote_submit_client', {
         participant: participant,
+        activity_id: activityId,
         votes: votes,
         nonce: Date.now() + Math.random()
       }, { priority: 'event' });
@@ -243,6 +270,7 @@
       if (delta < 0 && current <= 0) return;
 
       voteState[id] = Math.max(0, current + delta);
+      savedVoteActivities[aid] = false;
       updateVotingUI();
       return;
     }
@@ -322,6 +350,24 @@
       updateVotingUI();
     });
 
+    Shiny.addCustomMessageHandler('voteActivitySaved', function (message) {
+      var aid = String(message && message.activity_id ? message.activity_id : '');
+      if (aid) savedVoteActivities[aid] = true;
+      localVoteBusy = false;
+      updateVotingUI();
+    });
+
+    Shiny.addCustomMessageHandler('resetVotingActivity', function (message) {
+      ensureVotingStateFromDOM();
+      var aid = String(message && message.activity_id ? message.activity_id : '');
+      Object.keys(voteState).forEach(function (id) {
+        if (String(voteActivityByConclusion[id] || '') === aid) voteState[id] = 0;
+      });
+      localVoteBusy = false;
+      updateVotingUI();
+    });
+
+    // Compatibilidad con mensajes de versiones anteriores.
     Shiny.addCustomMessageHandler('resetVotingClient', function () {
       ensureVotingStateFromDOM();
       Object.keys(voteState).forEach(function (id) { voteState[id] = 0; });
@@ -346,6 +392,7 @@
         setTimeout(function () {
           voteState = {};
           voteActivityByConclusion = {};
+          savedVoteActivities = {};
           localVoteBusy = false;
           applyRememberedName();
           applyActivityFilter();
