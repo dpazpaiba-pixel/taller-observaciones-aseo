@@ -1243,3 +1243,61 @@ table > thead > tr > th,
     padding-left: 0;
   }
 }
+
+/* ============================================================
+   V7.8 · PRIORIZACIÓN LIVIANA PARA ALTA CONCURRENCIA
+   Los controles de puntos funcionan en el navegador.
+   ============================================================ */
+.voting-client-status {
+  margin: 14px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--brand-light);
+  background: #F7FBFC;
+  font-weight: 700;
+  color: #31515E;
+}
+
+.voting-client-status.complete {
+  border-left-color: var(--brand-green);
+  background: #EAF7F4;
+  color: #1F675A;
+}
+
+.voting-activity-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 250px);
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--brand-light);
+}
+
+.voting-activity-header h3 {
+  margin: 0;
+}
+
+.activity-points-counter {
+  min-width: 190px;
+  justify-self: end;
+}
+
+.voting-client-root .vote-card {
+  margin-bottom: 10px;
+}
+
+.voting-client-root .vote-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+@media (max-width: 767px) {
+  .voting-activity-header {
+    grid-template-columns: 1fr;
+  }
+  .activity-points-counter {
+    justify-self: stretch;
+    width: 100%;
+  }
+}
