@@ -1,6 +1,6 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V8.6: agrega Tratamiento; priorización independiente por actividad con 5 puntos por actividad
+# V8.7: cierra captura de nuevas observaciones para Recolección y transporte y Barrido
 #       5 puntos independientes por cada actividad incluida en la priorización
 #       Sin preguntas del instrumento en ninguna actividad
 #       Límites: Observación 50 caracteres; demás textos libres 100
@@ -43,6 +43,10 @@ ACTIVIDADES <- data.frame(
   ),
   stringsAsFactors = FALSE
 )
+
+# La captura de nuevas observaciones queda cerrada para las actividades ya trabajadas.
+# Siguen visibles en Consolidado, Priorización, Resultados y filtros de consulta.
+ACTIVIDADES_CAPTURA_ABIERTA <- ACTIVIDADES[!ACTIVIDADES$id %in% c(7L, 8L), , drop = FALSE]
 
 PUNTOS_TOTALES_POR_PERSONA <- PUNTOS_POR_ACTIVIDAD * nrow(ACTIVIDADES)
 
@@ -1015,7 +1019,12 @@ ui <- navbarPage(
         class = "page-intro",
         div(class = "eyebrow", "CAPTURA POR GRUPOS"),
         tags$h2("Registrar una observación"),
-        tags$p("Cada grupo registra observaciones para la actividad del servicio que corresponda. Los registros se sincronizan entre sesiones pocos segundos después de guardarse.")
+        tags$p("Cada grupo registra observaciones para la actividad del servicio que corresponda."),
+        div(
+          class = "capture-closed-notice",
+          tags$strong("Captura cerrada para Recolección y transporte y Barrido. "),
+          "Estas actividades permanecen disponibles para consulta, consolidación, priorización y resultados, pero ya no aceptan nuevas observaciones."
+        )
       ),
       fluidRow(
         column(
@@ -1031,13 +1040,13 @@ ui <- navbarPage(
             div(class = "field-help", paste0("Máximo ", MAX_TEXTO, " caracteres.")),
             selectInput(
               "actividad_registro", "Actividad del servicio",
-              choices = setNames(ACTIVIDADES$id, ACTIVIDADES$actividad),
-              selected = 7
+              choices = setNames(ACTIVIDADES_CAPTURA_ABIERTA$id, ACTIVIDADES_CAPTURA_ABIERTA$actividad),
+              selected = ACTIVIDADES_CAPTURA_ABIERTA$id[1]
             ),
             selectInput(
               "bloque_registro", "Bloque temático",
-              choices = setNames(BLOQUES_POR_ACTIVIDAD[["7"]], BLOQUES_POR_ACTIVIDAD[["7"]]),
-              selected = BLOQUES_POR_ACTIVIDAD[["7"]][1]
+              choices = setNames(BLOQUES_POR_ACTIVIDAD[[as.character(ACTIVIDADES_CAPTURA_ABIERTA$id[1])]], BLOQUES_POR_ACTIVIDAD[[as.character(ACTIVIDADES_CAPTURA_ABIERTA$id[1])]]),
+              selected = BLOQUES_POR_ACTIVIDAD[[as.character(ACTIVIDADES_CAPTURA_ABIERTA$id[1])]][1]
             ),
             selectizeInput(
               "municipios", "Municipios donde se observó",
@@ -1291,7 +1300,7 @@ server <- function(input, output, session) {
   observeEvent(session$clientData$url_search, {
     qs <- parseQueryString(session$clientData$url_search)
     aid <- suppressWarnings(as.integer(qs$actividad %||% NA))
-    if (!is.na(aid) && aid %in% ACTIVIDADES$id) updateSelectInput(session, "actividad_registro", selected = aid)
+    if (!is.na(aid) && aid %in% ACTIVIDADES_CAPTURA_ABIERTA$id) updateSelectInput(session, "actividad_registro", selected = aid)
   }, once = TRUE)
 
   observeEvent(input$comision_registro, {
@@ -1300,7 +1309,7 @@ server <- function(input, output, session) {
   }, ignoreInit = FALSE)
 
   actualizar_bloques_registro <- function(aid) {
-    aid <- as.character(aid %||% "7")
+    aid <- as.character(aid %||% as.character(ACTIVIDADES_CAPTURA_ABIERTA$id[1]))
     bloques <- BLOQUES_POR_ACTIVIDAD[[aid]] %||% character(0)
     seleccionado <- if (length(bloques) > 0) bloques[1] else character(0)
     updateSelectInput(
@@ -1316,7 +1325,7 @@ server <- function(input, output, session) {
   }, ignoreInit = FALSE)
 
   output$contribution_metrics <- renderUI({
-    aid <- as.integer(input$actividad_registro %||% 7)
+    aid <- as.integer(input$actividad_registro %||% ACTIVIDADES_CAPTURA_ABIERTA$id[1])
     h <- capture_obs() %>% filter(actividad_id == aid)
     div(
       class = "metrics-grid three",
@@ -1327,7 +1336,7 @@ server <- function(input, output, session) {
   })
 
   output$people_progress <- renderUI({
-    aid <- as.integer(input$actividad_registro %||% 7)
+    aid <- as.integer(input$actividad_registro %||% ACTIVIDADES_CAPTURA_ABIERTA$id[1])
     h <- capture_obs() %>% filter(actividad_id == aid)
     if (nrow(h) == 0) return(div(class = "empty-state", "Todavía no hay aportes en esta actividad."))
     x <- h %>% count(grupo, sort = TRUE, name = "aportes")
@@ -1386,6 +1395,7 @@ server <- function(input, output, session) {
     if (!nzchar(grupo)) errors <- c(errors, "Seleccione la comisión / grupo.")
     if (!nzchar(persona)) errors <- c(errors, "Ingrese el nombre de quien registra.")
     if (is.na(aid) || !aid %in% ACTIVIDADES$id) errors <- c(errors, "Seleccione una actividad válida.")
+    if (!is.na(aid) && aid %in% c(7L, 8L)) errors <- c(errors, "La captura de nuevas observaciones para Recolección y transporte y Barrido está cerrada.")
     if (!nzchar(bloque)) errors <- c(errors, "Seleccione el bloque temático.")
     if (!nzchar(observacion)) errors <- c(errors, "Escriba la observación de campo.")
     if (nchar(observacion, type = "chars") > MAX_OBSERVACION) errors <- c(errors, paste0("La observación puede tener máximo ", MAX_OBSERVACION, " caracteres."))
