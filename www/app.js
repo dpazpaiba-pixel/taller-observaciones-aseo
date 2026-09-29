@@ -7,8 +7,8 @@
 
   var TEXT_LIMITS = {
     persona_registro: 100,
-    observacion: 50,
-    implicacion: 100,
+    observacion: 150,
+    implicacion: 150,
     modal_conclusion: 100,
     participant_name_client: 100
   };
