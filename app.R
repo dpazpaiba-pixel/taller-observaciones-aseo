@@ -1,9 +1,9 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V8.7: cierra captura de nuevas observaciones para Recolección y transporte y Barrido
+# V8.8: observación e implicación ampliadas a 150 caracteres
 #       5 puntos independientes por cada actividad incluida en la priorización
 #       Sin preguntas del instrumento en ninguna actividad
-#       Límites: Observación 50 caracteres; demás textos libres 100
+#       Límites: Observación e implicación 150 caracteres; demás textos libres 100
 #       Captura de observaciones por grupos
 #       Consolidación con múltiples conclusiones y priorización
 # ============================================================
@@ -17,7 +17,8 @@ N_PARTICIPANTES_ESPERADOS <- 50L
 PUNTOS_POR_ACTIVIDAD <- 5L
 N_PRIORIZADOS_DEFAULT <- 10L
 CACHE_SEGUNDOS <- 3
-MAX_OBSERVACION <- 50L
+MAX_OBSERVACION <- 150L
+MAX_IMPLICACION <- 150L
 MAX_TEXTO <- 100L
 
 CATEGORIAS <- c(
@@ -1070,7 +1071,7 @@ ui <- navbarPage(
             ),
             div(class = "field-help", "Seleccione una sola clasificación."),
             textAreaInput("implicacion", "Implicación para el estudio", rows = 3, placeholder = "¿Qué debería revisar o analizar el estudio regulatorio?"),
-            div(class = "field-help", paste0("Máximo ", MAX_TEXTO, " caracteres.")),
+            div(class = "field-help", paste0("Máximo ", MAX_IMPLICACION, " caracteres.")),
             actionButton("guardar_observacion", "Guardar observación", class = "btn-primary btn-lg full-action")
           )
         ),
@@ -1400,7 +1401,7 @@ server <- function(input, output, session) {
     if (!nzchar(observacion)) errors <- c(errors, "Escriba la observación de campo.")
     if (nchar(observacion, type = "chars") > MAX_OBSERVACION) errors <- c(errors, paste0("La observación puede tener máximo ", MAX_OBSERVACION, " caracteres."))
     if (nchar(persona, type = "chars") > MAX_TEXTO) errors <- c(errors, paste0("El nombre puede tener máximo ", MAX_TEXTO, " caracteres."))
-    if (nchar(implicacion, type = "chars") > MAX_TEXTO) errors <- c(errors, paste0("La implicación puede tener máximo ", MAX_TEXTO, " caracteres."))
+    if (nchar(implicacion, type = "chars") > MAX_IMPLICACION) errors <- c(errors, paste0("La implicación puede tener máximo ", MAX_IMPLICACION, " caracteres."))
     if (length(input$municipios %||% character(0)) > 0 && any(nchar(input$municipios, type = "chars") > MAX_TEXTO)) errors <- c(errors, paste0("Cada municipio puede tener máximo ", MAX_TEXTO, " caracteres."))
     if (nchar(municipios, type = "chars") > MAX_TEXTO) errors <- c(errors, paste0("El conjunto de municipios puede tener máximo ", MAX_TEXTO, " caracteres."))
     if (length(cats) != 1) errors <- c(errors, "Seleccione exactamente una clasificación.")
