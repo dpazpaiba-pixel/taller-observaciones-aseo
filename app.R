@@ -1,6 +1,7 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V8.8: observación e implicación ampliadas a 150 caracteres
+# V8.9: envío de priorización por actividad con confirmación robusta y sin bloqueos indefinidos
+#       observación e implicación ampliadas a 150 caracteres
 #       5 puntos independientes por cada actividad incluida en la priorización
 #       Sin preguntas del instrumento en ninguna actividad
 #       Límites: Observación e implicación 150 caracteres; demás textos libres 100
@@ -604,8 +605,18 @@ insert_postgres_votos <- function(rows) {
     participante <- rows$participante[1]
     pkey <- rows$participante_key[1]
 
-    # Serializa únicamente reenvíos de la misma persona para la misma actividad.
-    DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(hashtext($1)) AS locked", params = list(pkey))
+    # Evita esperas indefinidas: cada escritura tiene tiempos máximos y el
+    # bloqueo por participante/actividad es no bloqueante.
+    DBI::dbExecute(con, "SET LOCAL lock_timeout = '3s'")
+    DBI::dbExecute(con, "SET LOCAL statement_timeout = '12s'")
+    lock_ok <- DBI::dbGetQuery(
+      con,
+      "SELECT pg_try_advisory_xact_lock(hashtext($1)) AS locked",
+      params = list(pkey)
+    )$locked[1]
+    if (!isTRUE(lock_ok)) {
+      stop("Ya hay un envío de esta actividad en proceso. Espere unos segundos y vuelva a intentar.")
+    }
 
     detalles <- rows %>%
       transmute(
@@ -1222,7 +1233,8 @@ ui <- navbarPage(
           class = "btn btn-primary btn-lg vote-submit",
           disabled = "disabled",
           "Enviar priorización"
-        )
+        ),
+        div(style = "display:none;", textOutput("vote_submit_ack"))
       )
     )
   ),
@@ -1673,6 +1685,13 @@ server <- function(input, output, session) {
 
   session_votable <- reactiveVal(empty_conclusiones())
 
+  # Canal de confirmación robusto para el navegador. A diferencia de un mensaje
+  # personalizado, este output forma parte del protocolo normal de Shiny y permite
+  # liberar cada actividad aunque falle un handler JavaScript personalizado.
+  vote_submit_ack <- reactiveVal("")
+  output$vote_submit_ack <- renderText(vote_submit_ack())
+  outputOptions(output, "vote_submit_ack", suspendWhenHidden = FALSE)
+
   output$prioritization_cards_ui <- renderUI({
     # Una sola construcción por sesión. La lectura usa caché compartida por worker.
     c <- get_prioritization_conclusions(FALSE) %>%
@@ -1831,57 +1850,56 @@ server <- function(input, output, session) {
 
   save_client_vote <- function(participant, actividad_id, vote_items) {
     rows <- make_vote_rows(participant, actividad_id, vote_items)
-    tryCatch({
-      # Validación de actividad también se hace localmente; PostgreSQL vuelve a
-      # comprobar los 5 puntos dentro de la misma transacción.
-      validate_activity_vote(vote_items, actividad_id)
-      insert_votos(rows)
-      session$sendCustomMessage("voteBusy", list(busy = FALSE))
-      session$sendCustomMessage("voteActivitySaved", list(activity_id = as.integer(actividad_id)))
-      showNotification(
-        paste0(
-          "Priorización de ", activity_name(actividad_id),
-          " enviada correctamente (", PUNTOS_POR_ACTIVIDAD, " puntos)."
-        ),
-        type = "message", duration = 6
-      )
-      TRUE
-    }, error = function(e) {
-      session$sendCustomMessage("voteBusy", list(busy = FALSE))
-      showNotification(paste("No se pudo guardar la priorización:", conditionMessage(e)), type = "error", duration = 12)
-      FALSE
-    })
+
+    # Validación de actividad también se hace localmente; PostgreSQL vuelve a
+    # comprobar los 5 puntos dentro de la misma transacción.
+    validate_activity_vote(vote_items, actividad_id)
+    insert_votos(rows)
+
+    showNotification(
+      paste0(
+        "Priorización de ", activity_name(actividad_id),
+        " enviada correctamente (", PUNTOS_POR_ACTIVIDAD, " puntos)."
+      ),
+      type = "message", duration = 6
+    )
+    invisible(TRUE)
   }
 
   observeEvent(input$vote_submit_client, {
     payload <- input$vote_submit_client
-    participant <- trimws(as.character(payload$participant %||% ""))
-    actividad_id <- suppressWarnings(as.integer(payload$activity_id %||% NA_integer_))
-    vote_items <- normalize_client_votes(payload$votes)
+    nonce <- as.character(payload$nonce %||% "")
+    actividad_hint <- suppressWarnings(as.integer(payload$activity_id %||% NA_integer_))
 
-    if (!nzchar(participant)) {
-      session$sendCustomMessage("voteBusy", list(busy = FALSE))
-      showNotification("Escriba su nombre antes de enviar la priorización.", type = "error", duration = 6)
-      return()
-    }
-    if (nchar(participant, type = "chars") > MAX_TEXTO) {
-      session$sendCustomMessage("voteBusy", list(busy = FALSE))
-      showNotification(paste0("El nombre puede tener máximo ", MAX_TEXTO, " caracteres."), type = "error", duration = 6)
-      return()
-    }
-    if (is.na(actividad_id) || !(actividad_id %in% ACTIVIDADES$id)) {
-      session$sendCustomMessage("voteBusy", list(busy = FALSE))
-      showNotification("Seleccione la actividad que desea priorizar.", type = "error", duration = 6)
-      return()
-    }
-    if (nrow(vote_items) == 0) {
-      session$sendCustomMessage("voteBusy", list(busy = FALSE))
-      showNotification("No se recibieron puntos para guardar.", type = "error", duration = 6)
-      return()
+    send_vote_ack <- function(status) {
+      aid <- if (is.na(actividad_hint)) "" else as.character(actividad_hint)
+      vote_submit_ack(paste(nonce, aid, status, sep = "|"))
     }
 
-    session$sendCustomMessage("voteBusy", list(busy = TRUE))
-    save_client_vote(participant, actividad_id, vote_items)
+    tryCatch({
+      participant <- trimws(as.character(payload$participant %||% ""))
+      actividad_id <- suppressWarnings(as.integer(payload$activity_id %||% NA_integer_))
+      vote_items <- normalize_client_votes(payload$votes)
+
+      if (!nzchar(participant)) stop("Escriba su nombre antes de enviar la priorización.")
+      if (nchar(participant, type = "chars") > MAX_TEXTO) {
+        stop(paste0("El nombre puede tener máximo ", MAX_TEXTO, " caracteres."))
+      }
+      if (is.na(actividad_id) || !(actividad_id %in% ACTIVIDADES$id)) {
+        stop("Seleccione la actividad que desea priorizar.")
+      }
+      if (nrow(vote_items) == 0) stop("No se recibieron puntos para guardar.")
+
+      actividad_hint <- actividad_id
+      save_client_vote(participant, actividad_id, vote_items)
+      send_vote_ack("ok")
+    }, error = function(e) {
+      send_vote_ack("error")
+      showNotification(
+        paste("No se pudo guardar la priorización:", conditionMessage(e)),
+        type = "error", duration = 12
+      )
+    })
   })
 
   # ---------- RESULTADOS ----------
