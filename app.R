@@ -1,6 +1,6 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V8.9: envío de priorización por actividad con confirmación robusta y sin bloqueos indefinidos
+# V9.0: envío por actividad + panel de actividades pendientes después de cada envío
 #       observación e implicación ampliadas a 150 caracteres
 #       5 puntos independientes por cada actividad incluida en la priorización
 #       Sin preguntas del instrumento en ninguna actividad
@@ -1219,6 +1219,12 @@ ui <- navbarPage(
           "Seleccione una actividad y asigne exactamente ", PUNTOS_POR_ACTIVIDAD,
           " puntos. El envío se guarda únicamente para la actividad seleccionada."
         )
+      ),
+      div(
+        id = "pending_activities_panel",
+        class = "pending-activities-panel",
+        tags$div(class = "activity-picker-title", "Actividades pendientes por priorizar"),
+        tags$div(class = "activity-picker-help", "Seleccione una actividad para continuar.")
       ),
       div(
         id = "voting_client_root",
