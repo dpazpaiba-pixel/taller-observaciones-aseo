@@ -107,27 +107,85 @@
     }
   }
 
-  function advanceToNextActivity(savedActivityId) {
+  function activityHasConclusions(activityId) {
+    var section = document.querySelector('.activity-vote-section[data-activity-id="' + String(activityId || '') + '"]');
+    return !!(section && String(section.dataset.hasConclusions || 'false') === 'true');
+  }
+
+  function selectPriorityActivity(activityId) {
     var filter = document.getElementById('priority_activity_filter_client');
-    if (!filter || String(filter.value || '') !== String(savedActivityId || '')) return;
+    if (!filter) return;
+    filter.value = String(activityId || '');
+    filter.dispatchEvent(new Event('change', { bubbles: true }));
+    var toolbar = document.querySelector('.voter-toolbar');
+    if (toolbar && activityId) {
+      setTimeout(function () {
+        toolbar.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
+    }
+  }
 
-    var options = Array.from(filter.options || [])
-      .map(function (opt) { return String(opt.value || ''); })
-      .filter(function (aid) { return !!aid; });
+  function returnToActivityChooser() {
+    var filter = document.getElementById('priority_activity_filter_client');
+    if (filter) filter.value = '';
+    applyActivityFilter();
+    var panel = document.getElementById('pending_activities_panel');
+    if (panel) {
+      setTimeout(function () {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 80);
+    }
+  }
 
-    if (!options.length) return;
-    var currentIndex = options.indexOf(String(savedActivityId));
-    var ordered = options.slice(currentIndex + 1).concat(options.slice(0, currentIndex));
+  function renderActivityChooser() {
+    var panel = document.getElementById('pending_activities_panel');
+    var filter = document.getElementById('priority_activity_filter_client');
+    if (!panel || !filter) return;
 
-    var next = ordered.find(function (aid) {
-      var section = document.querySelector('.activity-vote-section[data-activity-id="' + aid + '"]');
-      var has = section && String(section.dataset.hasConclusions || 'false') === 'true';
-      return has && !savedVoteActivities[aid];
+    var options = Array.from(filter.options || []).filter(function (opt) {
+      return !!String(opt.value || '') && activityHasConclusions(String(opt.value || ''));
     });
 
-    if (next) {
-      filter.value = next;
-      filter.dispatchEvent(new Event('change', { bubbles: true }));
+    panel.innerHTML = '';
+    panel.appendChild(el('div', 'activity-picker-title', 'Actividades pendientes por priorizar'));
+
+    var pending = options.filter(function (opt) {
+      return !savedVoteActivities[String(opt.value || '')];
+    });
+    var sent = options.filter(function (opt) {
+      return !!savedVoteActivities[String(opt.value || '')];
+    });
+
+    if (pending.length) {
+      panel.appendChild(el('div', 'activity-picker-help', 'Seleccione la siguiente actividad. Cada una tiene 5 puntos independientes.'));
+      var grid = el('div', 'activity-picker-grid');
+      pending.forEach(function (opt) {
+        var btn = el('button', 'activity-picker-btn', String(opt.textContent || opt.innerText || 'Actividad'));
+        btn.type = 'button';
+        btn.dataset.pickActivity = String(opt.value || '');
+        var meta = el('span', 'activity-picker-meta', 'Pendiente · 5 puntos');
+        btn.appendChild(meta);
+        grid.appendChild(btn);
+      });
+      panel.appendChild(grid);
+    } else if (options.length) {
+      var done = el('div', 'activity-picker-all-done', 'Ya envió la priorización de todas las actividades disponibles.');
+      panel.appendChild(done);
+    } else {
+      panel.appendChild(el('div', 'activity-picker-help', 'Todavía no hay actividades con conclusiones habilitadas para priorización.'));
+    }
+
+    if (sent.length) {
+      var sentWrap = el('div', 'activity-picker-sent');
+      sentWrap.appendChild(el('div', 'activity-picker-sent-title', 'Enviadas'));
+      sent.forEach(function (opt) {
+        var chip = el('button', 'activity-sent-chip', '✓ ' + String(opt.textContent || opt.innerText || 'Actividad'));
+        chip.type = 'button';
+        chip.dataset.pickActivity = String(opt.value || '');
+        chip.title = 'Abrir para revisar o reemplazar esta priorización';
+        sentWrap.appendChild(chip);
+      });
+      panel.appendChild(sentWrap);
     }
   }
 
@@ -146,7 +204,7 @@
     if (status === 'ok') {
       savedVoteActivities[aid] = true;
       updateVotingUI();
-      advanceToNextActivity(aid);
+      returnToActivityChooser();
     } else {
       savedVoteActivities[aid] = false;
       updateVotingUI();
@@ -166,6 +224,7 @@
       var aid = String(section.dataset.activityId || '');
       section.style.display = (selected && selected === aid) ? '' : 'none';
     });
+    renderActivityChooser();
     updateVotingUI();
   }
 
@@ -191,6 +250,7 @@
 
   function updateVotingUI() {
     ensureVotingStateFromDOM();
+    renderActivityChooser();
 
     var filter = document.getElementById('priority_activity_filter_client');
     var selected = filter ? String(filter.value || '') : '';
@@ -354,6 +414,13 @@
       return;
     }
 
+    var activityPickerButton = event.target.closest('[data-pick-activity]');
+    if (activityPickerButton) {
+      event.preventDefault();
+      selectPriorityActivity(activityPickerButton.dataset.pickActivity || '');
+      return;
+    }
+
     var localVoteButton = event.target.closest('[data-vote-local="true"]');
     if (localVoteButton) {
       event.preventDefault();
@@ -457,7 +524,7 @@
       setActivityPending(aid, false);
       savedVoteActivities[aid] = true;
       updateVotingUI();
-      advanceToNextActivity(aid);
+      returnToActivityChooser();
     });
 
     Shiny.addCustomMessageHandler('resetVotingActivity', function (message) {
@@ -505,6 +572,7 @@
           Object.keys(voteSubmitTimers).forEach(function (aid) { clearVoteTimer(aid); });
           applyRememberedName();
           applyActivityFilter();
+          renderActivityChooser();
           updateVotingUI();
         }, 0);
       }

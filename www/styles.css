@@ -1313,3 +1313,90 @@ table > thead > tr > th,
   font-size: 0.92rem;
   line-height: 1.45;
 }
+
+
+/* V9.0 · Panel de actividades pendientes en Priorización */
+.pending-activities-panel {
+  margin: 14px 0 18px;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #b9d6df;
+  border-left: 4px solid #44b2d7;
+}
+.activity-picker-title {
+  font-family: Verdana, Geneva, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #073b4c;
+  margin-bottom: 5px;
+}
+.activity-picker-help {
+  color: #60727b;
+  margin-bottom: 12px;
+}
+.activity-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+.activity-picker-btn {
+  border: 1px solid #8fc3d3;
+  border-left: 5px solid #00628c;
+  background: #f8fcfd;
+  color: #073b4c;
+  text-align: left;
+  padding: 12px 14px;
+  min-height: 64px;
+  font-family: Verdana, Geneva, sans-serif;
+  font-weight: 700;
+  cursor: pointer;
+}
+.activity-picker-btn:hover,
+.activity-picker-btn:focus {
+  background: #eaf6f9;
+  border-color: #44b2d7;
+  outline: none;
+}
+.activity-picker-meta {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #60727b;
+}
+.activity-picker-sent {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #d9e7eb;
+}
+.activity-picker-sent-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #4a626d;
+  margin-bottom: 7px;
+}
+.activity-sent-chip {
+  display: inline-block;
+  margin: 0 7px 7px 0;
+  padding: 6px 9px;
+  border: 1px solid #8cc9bb;
+  background: #eef9f5;
+  color: #256f61;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.activity-sent-chip:hover,
+.activity-sent-chip:focus {
+  background: #dff3ec;
+  outline: none;
+}
+.activity-picker-all-done {
+  padding: 12px;
+  background: #eef9f5;
+  border: 1px solid #8cc9bb;
+  color: #256f61;
+  font-weight: 700;
+}
+@media (max-width: 768px) {
+  .activity-picker-grid { grid-template-columns: 1fr; }
+}
