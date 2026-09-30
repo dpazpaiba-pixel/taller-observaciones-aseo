@@ -17,8 +17,11 @@
   // Los clics + / - NO generan eventos Shiny ni consultas al servidor.
   var voteState = {};
   var voteActivityByConclusion = {};
-  var localVoteBusy = false;
+  var localVoteBusy = false; // compatibilidad con mensajes antiguos
   var savedVoteActivities = {};
+  var pendingVoteActivities = {};
+  var pendingVoteNonce = {};
+  var voteSubmitTimers = {};
 
   function applyLimitToElement(el) {
     if (!el || !el.id) return;
@@ -81,6 +84,81 @@
     return Array.from(document.querySelectorAll('.activity-vote-section[data-activity-id]'));
   }
 
+  function isActivityBusy(activityId) {
+    return !!pendingVoteActivities[String(activityId || '')];
+  }
+
+  function clearVoteTimer(activityId) {
+    var aid = String(activityId || '');
+    if (voteSubmitTimers[aid]) {
+      clearTimeout(voteSubmitTimers[aid]);
+      delete voteSubmitTimers[aid];
+    }
+  }
+
+  function setActivityPending(activityId, pending, nonce) {
+    var aid = String(activityId || '');
+    if (!aid) return;
+    pendingVoteActivities[aid] = !!pending;
+    if (pending && nonce) pendingVoteNonce[aid] = String(nonce);
+    if (!pending) {
+      clearVoteTimer(aid);
+      delete pendingVoteNonce[aid];
+    }
+  }
+
+  function advanceToNextActivity(savedActivityId) {
+    var filter = document.getElementById('priority_activity_filter_client');
+    if (!filter || String(filter.value || '') !== String(savedActivityId || '')) return;
+
+    var options = Array.from(filter.options || [])
+      .map(function (opt) { return String(opt.value || ''); })
+      .filter(function (aid) { return !!aid; });
+
+    if (!options.length) return;
+    var currentIndex = options.indexOf(String(savedActivityId));
+    var ordered = options.slice(currentIndex + 1).concat(options.slice(0, currentIndex));
+
+    var next = ordered.find(function (aid) {
+      var section = document.querySelector('.activity-vote-section[data-activity-id="' + aid + '"]');
+      var has = section && String(section.dataset.hasConclusions || 'false') === 'true';
+      return has && !savedVoteActivities[aid];
+    });
+
+    if (next) {
+      filter.value = next;
+      filter.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  function handleVoteAck(raw) {
+    var parts = String(raw || '').split('|');
+    if (parts.length < 3) return;
+
+    var nonce = parts[0];
+    var aid = String(parts[1] || '');
+    var status = String(parts[2] || '');
+    if (!aid || !pendingVoteActivities[aid]) return;
+    if (pendingVoteNonce[aid] && String(pendingVoteNonce[aid]) !== nonce) return;
+
+    setActivityPending(aid, false);
+
+    if (status === 'ok') {
+      savedVoteActivities[aid] = true;
+      updateVotingUI();
+      advanceToNextActivity(aid);
+    } else {
+      savedVoteActivities[aid] = false;
+      updateVotingUI();
+      var filter = document.getElementById('priority_activity_filter_client');
+      var statusNode = document.getElementById('voting_client_status');
+      if (filter && statusNode && String(filter.value || '') === aid) {
+        statusNode.textContent = 'No se pudo confirmar el envío. Revise el mensaje de error y vuelva a intentarlo.';
+        statusNode.classList.remove('complete');
+      }
+    }
+  }
+
   function applyActivityFilter() {
     var filter = document.getElementById('priority_activity_filter_client');
     var selected = filter ? String(filter.value || '') : '';
@@ -141,8 +219,9 @@
         var id = String(btn.dataset.id || '');
         var delta = Number(btn.dataset.delta || 0);
         var value = Number(voteState[id] || 0);
-        if (delta > 0) btn.disabled = localVoteBusy || total >= limit;
-        if (delta < 0) btn.disabled = localVoteBusy || value <= 0;
+        var busy = isActivityBusy(aid);
+        if (delta > 0) btn.disabled = busy || total >= limit;
+        if (delta < 0) btn.disabled = busy || value <= 0;
       });
     });
 
@@ -174,15 +253,20 @@
     var complete = hasConclusions && total === limit;
 
     var alreadySaved = !!savedVoteActivities[selected];
+    var selectedBusy = isActivityBusy(selected);
     if (submit) {
-      submit.disabled = localVoteBusy || !complete || !nameOk;
-      if (!localVoteBusy) {
+      submit.disabled = selectedBusy || !complete || !nameOk;
+      if (selectedBusy) {
+        submit.textContent = 'Guardando priorización de ' + activityName + '…';
+      } else {
         submit.textContent = (alreadySaved ? 'Reenviar priorización de ' : 'Enviar priorización de ') + activityName;
       }
     }
 
     if (status) {
-      if (!hasConclusions) {
+      if (selectedBusy) {
+        status.textContent = activityName + ': guardando en segundo plano. Puede pasar a otra actividad mientras termina.';
+      } else if (!hasConclusions) {
         status.textContent = 'No hay conclusiones habilitadas para ' + activityName + '.';
       } else if (complete && nameOk && alreadySaved) {
         status.textContent = activityName + ': priorización enviada. Puede pasar a otra actividad o modificar y reenviar estos 5 puntos.';
@@ -191,12 +275,11 @@
       } else {
         status.textContent = activityName + ': ' + total + '/' + limit + ' puntos asignados.';
       }
-      status.classList.toggle('complete', complete && nameOk);
+      status.classList.toggle('complete', complete && nameOk && !selectedBusy);
     }
   }
 
   function submitClientVote() {
-    if (localVoteBusy) return;
     var submit = document.getElementById('submit_votes_client');
     if (!submit || submit.disabled) return;
 
@@ -206,7 +289,7 @@
 
     var filter = document.getElementById('priority_activity_filter_client');
     var activityId = filter ? String(filter.value || '') : '';
-    if (!activityId) return;
+    if (!activityId || isActivityBusy(activityId)) return;
 
     var votes = Object.keys(voteState)
       .filter(function (id) {
@@ -214,21 +297,41 @@
       })
       .map(function (id) { return { id: id, puntos: Number(voteState[id]) }; });
 
-    localVoteBusy = true;
-    submit.textContent = 'Guardando priorización…';
+    var nonce = String(Date.now()) + '_' + Math.random().toString(36).slice(2);
+    setActivityPending(activityId, true, nonce);
     updateVotingUI();
+
+    // Si por cualquier motivo no llega confirmación del servidor, nunca dejamos
+    // la interfaz bloqueada indefinidamente. El usuario puede reintentar.
+    voteSubmitTimers[activityId] = setTimeout(function () {
+      if (!isActivityBusy(activityId)) return;
+      if (String(pendingVoteNonce[activityId] || '') !== nonce) return;
+
+      setActivityPending(activityId, false);
+      updateVotingUI();
+
+      var currentFilter = document.getElementById('priority_activity_filter_client');
+      var status = document.getElementById('voting_client_status');
+      if (currentFilter && status && String(currentFilter.value || '') === activityId) {
+        status.textContent = 'No se recibió confirmación del servidor en 15 segundos. Puede volver a enviar esta actividad.';
+        status.classList.remove('complete');
+      }
+    }, 15000);
 
     if (window.Shiny) {
       Shiny.setInputValue('vote_submit_client', {
         participant: participant,
         activity_id: activityId,
         votes: votes,
-        nonce: Date.now() + Math.random()
+        nonce: nonce
       }, { priority: 'event' });
+    } else {
+      setActivityPending(activityId, false);
+      updateVotingUI();
     }
   }
 
-  document.addEventListener('change', function (event) {
+  document.addEventListener('change' , function (event) {
     if (event.target && event.target.id === 'priority_activity_filter_client') {
       applyActivityFilter();
       return;
@@ -254,12 +357,11 @@
     var localVoteButton = event.target.closest('[data-vote-local="true"]');
     if (localVoteButton) {
       event.preventDefault();
-      if (localVoteBusy) return;
-
       ensureVotingStateFromDOM();
 
       var id = String(localVoteButton.dataset.id || '');
       var aid = String(localVoteButton.dataset.activityId || voteActivityByConclusion[id] || '');
+      if (isActivityBusy(aid)) return;
       var delta = Number(localVoteButton.dataset.delta || 0);
       var section = localVoteButton.closest('.activity-vote-section');
       var limit = Number(section && section.dataset.pointsLimit ? section.dataset.pointsLimit : 5);
@@ -343,18 +445,19 @@
       applyRememberedGroup();
     });
 
+    // Compatibilidad con mensajes de versiones anteriores. V8.9 usa
+    // vote_submit_ack como confirmación principal.
     Shiny.addCustomMessageHandler('voteBusy', function (message) {
       localVoteBusy = !!(message && message.busy);
-      var submit = document.getElementById('submit_votes_client');
-      if (submit && localVoteBusy) submit.textContent = 'Guardando priorización…';
-      updateVotingUI();
     });
 
     Shiny.addCustomMessageHandler('voteActivitySaved', function (message) {
       var aid = String(message && message.activity_id ? message.activity_id : '');
-      if (aid) savedVoteActivities[aid] = true;
-      localVoteBusy = false;
+      if (!aid) return;
+      setActivityPending(aid, false);
+      savedVoteActivities[aid] = true;
       updateVotingUI();
+      advanceToNextActivity(aid);
     });
 
     Shiny.addCustomMessageHandler('resetVotingActivity', function (message) {
@@ -363,15 +466,14 @@
       Object.keys(voteState).forEach(function (id) {
         if (String(voteActivityByConclusion[id] || '') === aid) voteState[id] = 0;
       });
-      localVoteBusy = false;
+      setActivityPending(aid, false);
       updateVotingUI();
     });
 
-    // Compatibilidad con mensajes de versiones anteriores.
     Shiny.addCustomMessageHandler('resetVotingClient', function () {
       ensureVotingStateFromDOM();
       Object.keys(voteState).forEach(function (id) { voteState[id] = 0; });
-      localVoteBusy = false;
+      Object.keys(pendingVoteActivities).forEach(function (aid) { setActivityPending(aid, false); });
       updateVotingUI();
     });
 
@@ -388,12 +490,19 @@
 
   if (window.jQuery) {
     jQuery(document).on('shiny:value', function (event) {
+      if (event && event.name === 'vote_submit_ack') {
+        handleVoteAck(event.value);
+        return;
+      }
+
       if (event && event.name === 'prioritization_cards_ui') {
         setTimeout(function () {
           voteState = {};
           voteActivityByConclusion = {};
           savedVoteActivities = {};
-          localVoteBusy = false;
+          pendingVoteActivities = {};
+          pendingVoteNonce = {};
+          Object.keys(voteSubmitTimers).forEach(function (aid) { clearVoteTimer(aid); });
           applyRememberedName();
           applyActivityFilter();
           updateVotingUI();
