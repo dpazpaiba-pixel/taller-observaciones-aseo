@@ -1,6 +1,6 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V9.0: envío por actividad + panel de actividades pendientes después de cada envío
+# V9.1: cierre manual de Captura y Priorización + consulta y consolidación habilitadas
 #       observación e implicación ampliadas a 150 caracteres
 #       5 puntos independientes por cada actividad incluida en la priorización
 #       Sin preguntas del instrumento en ninguna actividad
@@ -21,6 +21,10 @@ CACHE_SEGUNDOS <- 3
 MAX_OBSERVACION <- 150L
 MAX_IMPLICACION <- 150L
 MAX_TEXTO <- 100L
+
+# V9.1 · Versión de cierre manual para publicar cuando termine la recepción.
+CAPTURA_CERRADA_GLOBAL <- TRUE
+PRIORIZACION_CERRADA_GLOBAL <- TRUE
 
 CATEGORIAS <- c(
   funciona = "Funciona",
@@ -1034,15 +1038,15 @@ ui <- navbarPage(
         tags$p("Cada grupo registra observaciones para la actividad del servicio que corresponda."),
         div(
           class = "capture-closed-notice",
-          tags$strong("Captura cerrada para Recolección y transporte y Barrido. "),
-          "Estas actividades permanecen disponibles para consulta, consolidación, priorización y resultados, pero ya no aceptan nuevas observaciones."
+          tags$strong("Recepción de observaciones cerrada. "),
+          "No se aceptan nuevas observaciones. Los registros existentes permanecen disponibles para consulta; Consolidado y Resultados continúan habilitados."
         )
       ),
       fluidRow(
         column(
           width = 5,
           div(
-            class = "panel-card form-card",
+            class = paste("panel-card form-card", if (CAPTURA_CERRADA_GLOBAL) "capture-manual-locked" else ""),
             selectizeInput(
               "comision_registro", "Comisión / grupo que aporta",
               choices = COMISIONES, selected = COMISIONES[1],
@@ -1164,13 +1168,19 @@ ui <- navbarPage(
     "Priorización",
     value = "priorizacion",
     div(
-      class = "page-wrap",
+      class = paste("page-wrap", if (PRIORIZACION_CERRADA_GLOBAL) "priority-manual-locked" else ""),
       div(
         class = "page-intro",
         div(class = "eyebrow", "PRIORIZACIÓN"),
         tags$h2("Priorizar conclusiones"),
         tags$p("Cada actividad se prioriza y se envía por separado. Seleccione una actividad, distribuya sus 5 puntos y envíe esa priorización antes de continuar con otra.")
       ),
+      if (PRIORIZACION_CERRADA_GLOBAL)
+        div(
+          class = "capture-closed-notice priority-closed-notice",
+          tags$strong("Priorización cerrada. "),
+          "No se aceptan nuevos envíos ni reemplazos de votos. Los resultados registrados permanecen disponibles en la pestaña Resultados."
+        ),
       div(
         class = "question-card",
         div(class = "eyebrow", "PRIORIZACIÓN COLECTIVA"),
@@ -1401,6 +1411,11 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$guardar_observacion, {
+    if (isTRUE(CAPTURA_CERRADA_GLOBAL)) {
+      showNotification("La recepción de observaciones está cerrada.", type = "warning", duration = 6)
+      return()
+    }
+
     grupo <- trimws(input$comision_registro %||% "")
     persona <- trimws(input$persona_registro %||% "")
     aid <- as.integer(input$actividad_registro %||% NA)
@@ -1880,6 +1895,12 @@ server <- function(input, output, session) {
     send_vote_ack <- function(status) {
       aid <- if (is.na(actividad_hint)) "" else as.character(actividad_hint)
       vote_submit_ack(paste(nonce, aid, status, sep = "|"))
+    }
+
+    if (isTRUE(PRIORIZACION_CERRADA_GLOBAL)) {
+      send_vote_ack("error")
+      showNotification("La priorización está cerrada. No se aceptan nuevos envíos ni reemplazos.", type = "warning", duration = 8)
+      return()
     }
 
     tryCatch({
