@@ -1400,3 +1400,24 @@ table > thead > tr > th,
 @media (max-width: 768px) {
   .activity-picker-grid { grid-template-columns: 1fr; }
 }
+
+
+/* V9.1 · Cierre manual de recepción */
+.capture-manual-locked {
+  pointer-events: none;
+  opacity: 0.55;
+  position: relative;
+}
+.priority-manual-locked .voter-toolbar,
+.priority-manual-locked .question-card,
+.priority-manual-locked .voting-client-status,
+.priority-manual-locked .pending-activities-panel,
+.priority-manual-locked .voting-client-root,
+.priority-manual-locked .submit-vote-wrap {
+  pointer-events: none;
+  opacity: 0.5;
+}
+.priority-manual-locked .priority-closed-notice {
+  pointer-events: auto;
+  opacity: 1;
+}
