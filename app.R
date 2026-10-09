@@ -1,6 +1,6 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V9.1: cierre manual de Captura y Priorización + consulta y consolidación habilitadas
+# V9.2: reapertura de Priorización + Captura solo para Comercialización y Aprovechamiento
 #       observación e implicación ampliadas a 150 caracteres
 #       5 puntos independientes por cada actividad incluida en la priorización
 #       Sin preguntas del instrumento en ninguna actividad
@@ -23,8 +23,8 @@ MAX_IMPLICACION <- 150L
 MAX_TEXTO <- 100L
 
 # V9.1 · Versión de cierre manual para publicar cuando termine la recepción.
-CAPTURA_CERRADA_GLOBAL <- TRUE
-PRIORIZACION_CERRADA_GLOBAL <- TRUE
+CAPTURA_CERRADA_GLOBAL <- FALSE
+PRIORIZACION_CERRADA_GLOBAL <- FALSE
 
 CATEGORIAS <- c(
   funciona = "Funciona",
@@ -35,7 +35,7 @@ CATEGORIAS <- c(
 )
 
 ACTIVIDADES <- data.frame(
-  id = c(7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L, 15L),
+  id = c(7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L, 15L, 16L),
   actividad = c(
     "Recolección y transporte",
     "Barrido",
@@ -45,14 +45,15 @@ ACTIVIDADES <- data.frame(
     "Lavado",
     "Mantenimiento e instalación de cestas",
     "Limpieza de playas",
-    "Tratamiento"
+    "Tratamiento",
+    "Aprovechamiento"
   ),
   stringsAsFactors = FALSE
 )
 
-# La captura de nuevas observaciones queda cerrada para las actividades ya trabajadas.
-# Siguen visibles en Consolidado, Priorización, Resultados y filtros de consulta.
-ACTIVIDADES_CAPTURA_ABIERTA <- ACTIVIDADES[!ACTIVIDADES$id %in% c(7L, 8L), , drop = FALSE]
+# La captura de nuevas observaciones está abierta únicamente para Comercialización y Aprovechamiento.
+# Todas las actividades siguen visibles en Consolidado, Priorización, Resultados y filtros de consulta.
+ACTIVIDADES_CAPTURA_ABIERTA <- ACTIVIDADES[ACTIVIDADES$id %in% c(9L, 16L), , drop = FALSE]
 
 PUNTOS_TOTALES_POR_PERSONA <- PUNTOS_POR_ACTIVIDAD * nrow(ACTIVIDADES)
 
@@ -108,6 +109,17 @@ BLOQUES_POR_ACTIVIDAD <- list(
     "Costos e ingresos; personal; uso compartido de recursos",
     "Gestión ambiental y operativa; controles de calidad y laboratorio",
     "Producto final y comercialización"
+  ),
+  # Aprovechamiento: bloques propuestos con base en la operación de la actividad.
+  `16` = c(
+    "Recolección selectiva, frecuencias y cobertura",
+    "Separación en la fuente y calidad del material",
+    "Transporte selectivo y logística",
+    "ECA: infraestructura, capacidad y operación",
+    "Clasificación, pesaje y almacenamiento",
+    "Balance de masas, rechazos y trazabilidad",
+    "Personal, equipos y condiciones de operación",
+    "Comercialización de materiales e ingresos"
   )
 )
 
@@ -462,7 +474,7 @@ read_postgres_observaciones <- function() {
            municipios, implicacion, creado_en
     FROM public.observaciones
     WHERE activa = true
-      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14, 15)
+      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
     ORDER BY creado_en, id
   ")
   if (nrow(x) == 0) return(empty_observaciones())
@@ -501,7 +513,7 @@ read_postgres_conclusiones <- function() {
            habilitada_priorizacion, actualizado_por, actualizado_en
     FROM public.conclusiones
     WHERE activa = true
-      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14, 15)
+      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
     ORDER BY actividad_id, bloque, id
   ")
   if (nrow(x) == 0) return(empty_conclusiones())
@@ -1038,8 +1050,9 @@ ui <- navbarPage(
         tags$p("Cada grupo registra observaciones para la actividad del servicio que corresponda."),
         div(
           class = "capture-closed-notice",
-          tags$strong("Recepción de observaciones cerrada. "),
-          "No se aceptan nuevas observaciones. Los registros existentes permanecen disponibles para consulta; Consolidado y Resultados continúan habilitados."
+          style = "background:#eef8f6;border-color:#44A796;color:#174f47;",
+          tags$strong("Captura habilitada. "),
+          "En esta etapa se reciben nuevas observaciones únicamente para Comercialización y Aprovechamiento."
         )
       ),
       fluidRow(
@@ -1429,7 +1442,7 @@ server <- function(input, output, session) {
     if (!nzchar(grupo)) errors <- c(errors, "Seleccione la comisión / grupo.")
     if (!nzchar(persona)) errors <- c(errors, "Ingrese el nombre de quien registra.")
     if (is.na(aid) || !aid %in% ACTIVIDADES$id) errors <- c(errors, "Seleccione una actividad válida.")
-    if (!is.na(aid) && aid %in% c(7L, 8L)) errors <- c(errors, "La captura de nuevas observaciones para Recolección y transporte y Barrido está cerrada.")
+    if (!is.na(aid) && !(aid %in% ACTIVIDADES_CAPTURA_ABIERTA$id)) errors <- c(errors, "La captura de nuevas observaciones está habilitada únicamente para Comercialización y Aprovechamiento.")
     if (!nzchar(bloque)) errors <- c(errors, "Seleccione el bloque temático.")
     if (!nzchar(observacion)) errors <- c(errors, "Escriba la observación de campo.")
     if (nchar(observacion, type = "chars") > MAX_OBSERVACION) errors <- c(errors, paste0("La observación puede tener máximo ", MAX_OBSERVACION, " caracteres."))
