@@ -1,6 +1,6 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V9.2: reapertura de Priorización + Captura solo para Comercialización y Aprovechamiento
+# V9.3: Priorización abierta para todas las actividades + Captura para Comercialización, Aprovechamiento y Turismo
 #       observación e implicación ampliadas a 150 caracteres
 #       5 puntos independientes por cada actividad incluida en la priorización
 #       Sin preguntas del instrumento en ninguna actividad
@@ -35,7 +35,7 @@ CATEGORIAS <- c(
 )
 
 ACTIVIDADES <- data.frame(
-  id = c(7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L, 15L, 16L),
+  id = c(7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L, 15L, 16L, 17L),
   actividad = c(
     "Recolección y transporte",
     "Barrido",
@@ -46,14 +46,15 @@ ACTIVIDADES <- data.frame(
     "Mantenimiento e instalación de cestas",
     "Limpieza de playas",
     "Tratamiento",
-    "Aprovechamiento"
+    "Aprovechamiento",
+    "Turismo"
   ),
   stringsAsFactors = FALSE
 )
 
-# La captura de nuevas observaciones está abierta únicamente para Comercialización y Aprovechamiento.
+# La captura de nuevas observaciones está abierta únicamente para Comercialización, Aprovechamiento y Turismo.
 # Todas las actividades siguen visibles en Consolidado, Priorización, Resultados y filtros de consulta.
-ACTIVIDADES_CAPTURA_ABIERTA <- ACTIVIDADES[ACTIVIDADES$id %in% c(9L, 16L), , drop = FALSE]
+ACTIVIDADES_CAPTURA_ABIERTA <- ACTIVIDADES[ACTIVIDADES$id %in% c(9L, 16L, 17L), , drop = FALSE]
 
 PUNTOS_TOTALES_POR_PERSONA <- PUNTOS_POR_ACTIVIDAD * nrow(ACTIVIDADES)
 
@@ -120,6 +121,16 @@ BLOQUES_POR_ACTIVIDAD <- list(
     "Balance de masas, rechazos y trazabilidad",
     "Personal, equipos y condiciones de operación",
     "Comercialización de materiales e ingresos"
+  ),
+  # Turismo: componentes transversales del servicio de aseo en zonas de afluencia turística.
+  `17` = c(
+    "Barrido y limpieza de áreas públicas de interés turístico",
+    "Recolección y transporte de residuos en zonas turísticas",
+    "Cestas, puntos de disposición y almacenamiento temporal",
+    "Lavado y limpieza de espacios públicos",
+    "Limpieza de playas, zonas naturales y espacios de interés turístico",
+    "Capacidad operativa frente a temporadas de alta afluencia",
+    "Articulación, información al usuario y manejo de residuos asociados al turismo"
   )
 )
 
@@ -474,7 +485,7 @@ read_postgres_observaciones <- function() {
            municipios, implicacion, creado_en
     FROM public.observaciones
     WHERE activa = true
-      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)
     ORDER BY creado_en, id
   ")
   if (nrow(x) == 0) return(empty_observaciones())
@@ -513,7 +524,7 @@ read_postgres_conclusiones <- function() {
            habilitada_priorizacion, actualizado_por, actualizado_en
     FROM public.conclusiones
     WHERE activa = true
-      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+      AND actividad_id IN (7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)
     ORDER BY actividad_id, bloque, id
   ")
   if (nrow(x) == 0) return(empty_conclusiones())
@@ -1052,7 +1063,7 @@ ui <- navbarPage(
           class = "capture-closed-notice",
           style = "background:#eef8f6;border-color:#44A796;color:#174f47;",
           tags$strong("Captura habilitada. "),
-          "En esta etapa se reciben nuevas observaciones únicamente para Comercialización y Aprovechamiento."
+          "En esta etapa se reciben nuevas observaciones únicamente para Comercialización, Aprovechamiento y Turismo."
         )
       ),
       fluidRow(
@@ -1442,7 +1453,7 @@ server <- function(input, output, session) {
     if (!nzchar(grupo)) errors <- c(errors, "Seleccione la comisión / grupo.")
     if (!nzchar(persona)) errors <- c(errors, "Ingrese el nombre de quien registra.")
     if (is.na(aid) || !aid %in% ACTIVIDADES$id) errors <- c(errors, "Seleccione una actividad válida.")
-    if (!is.na(aid) && !(aid %in% ACTIVIDADES_CAPTURA_ABIERTA$id)) errors <- c(errors, "La captura de nuevas observaciones está habilitada únicamente para Comercialización y Aprovechamiento.")
+    if (!is.na(aid) && !(aid %in% ACTIVIDADES_CAPTURA_ABIERTA$id)) errors <- c(errors, "La captura de nuevas observaciones está habilitada únicamente para Comercialización, Aprovechamiento y Turismo.")
     if (!nzchar(bloque)) errors <- c(errors, "Seleccione el bloque temático.")
     if (!nzchar(observacion)) errors <- c(errors, "Escriba la observación de campo.")
     if (nchar(observacion, type = "chars") > MAX_OBSERVACION) errors <- c(errors, paste0("La observación puede tener máximo ", MAX_OBSERVACION, " caracteres."))
