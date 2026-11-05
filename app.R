@@ -1,6 +1,6 @@
 # ============================================================
 # OBSERVACIONES DE CAMPO - NUEVO MARCO TARIFARIO DE ASEO
-# V9.3: Priorización abierta para todas las actividades + Captura para Comercialización, Aprovechamiento y Turismo
+# V9.4: Cierre de recepción de observaciones + Priorización abierta para todas las actividades
 #       observación e implicación ampliadas a 150 caracteres
 #       5 puntos independientes por cada actividad incluida en la priorización
 #       Sin preguntas del instrumento en ninguna actividad
@@ -23,7 +23,7 @@ MAX_IMPLICACION <- 150L
 MAX_TEXTO <- 100L
 
 # V9.1 · Versión de cierre manual para publicar cuando termine la recepción.
-CAPTURA_CERRADA_GLOBAL <- FALSE
+CAPTURA_CERRADA_GLOBAL <- TRUE
 PRIORIZACION_CERRADA_GLOBAL <- FALSE
 
 CATEGORIAS <- c(
@@ -1059,12 +1059,19 @@ ui <- navbarPage(
         div(class = "eyebrow", "CAPTURA POR GRUPOS"),
         tags$h2("Registrar una observación"),
         tags$p("Cada grupo registra observaciones para la actividad del servicio que corresponda."),
-        div(
-          class = "capture-closed-notice",
-          style = "background:#eef8f6;border-color:#44A796;color:#174f47;",
-          tags$strong("Captura habilitada. "),
-          "En esta etapa se reciben nuevas observaciones únicamente para Comercialización, Aprovechamiento y Turismo."
-        )
+        if (CAPTURA_CERRADA_GLOBAL)
+          div(
+            class = "capture-closed-notice",
+            tags$strong("Recepción de observaciones cerrada. "),
+            "El periodo para registrar nuevos comentarios y observaciones ha finalizado. Las observaciones ya registradas continúan disponibles para consulta y consolidación."
+          )
+        else
+          div(
+            class = "capture-closed-notice",
+            style = "background:#eef8f6;border-color:#44A796;color:#174f47;",
+            tags$strong("Captura habilitada. "),
+            "En esta etapa se reciben nuevas observaciones únicamente para Comercialización, Aprovechamiento y Turismo."
+          )
       ),
       fluidRow(
         column(
